@@ -29,78 +29,86 @@
 
   <div id="toast" class="toast" role="status" aria-live="polite"></div>
 
-  <dialog id="dlg-visita">
-    <form id="form-visita" class="form">
-      <header class="dlg-cab">
-        <h2>Registrar visita</h2>
-        <p id="dlg-visita-nombre"></p>
+  <dialog id="dlg-visita" class="hoja" aria-labelledby="dlg-visita-titulo">
+    <form id="form-visita" class="hoja-form">
+      <header class="hoja-cab">
+        <div>
+          <h2 id="dlg-visita-titulo">Registrar visita</h2>
+          <p id="dlg-visita-nombre"></p>
+        </div>
+        <button type="button" class="cerrar" data-cerrar aria-label="Cerrar">✕</button>
       </header>
 
-      <label class="campo">Fecha
-        <input type="date" name="fecha" min="2000-01-01" max="2100-12-31" required>
-      </label>
+      <div class="hoja-cuerpo">
+        <fieldset class="campo">
+          <legend>Resultado</legend>
+          <div class="opciones">
+            <label class="op"><input type="radio" name="resultado" value="compro" required><span>Compró</span></label>
+            <label class="op"><input type="radio" name="resultado" value="no_compro"><span>No compró</span></label>
+            <label class="op"><input type="radio" name="resultado" value="no_estaba"><span>No estaba</span></label>
+            <label class="op"><input type="radio" name="resultado" value="pidio_visita"><span>Pidió visita después</span></label>
+          </div>
+        </fieldset>
 
-      <fieldset class="campo">
-        <legend>Resultado</legend>
-        <div class="opciones">
-          <label class="op"><input type="radio" name="resultado" value="compro" required><span>Compró</span></label>
-          <label class="op"><input type="radio" name="resultado" value="no_compro"><span>No compró</span></label>
-          <label class="op"><input type="radio" name="resultado" value="no_estaba"><span>No estaba</span></label>
-          <label class="op"><input type="radio" name="resultado" value="pidio_visita"><span>Pidió visita después</span></label>
-        </div>
-      </fieldset>
+        <fieldset class="campo">
+          <legend>Líneas que vende</legend>
+          <div class="opciones opciones-3">
+            <label class="op"><input type="checkbox" name="lineas" value="lavaplatos"><span>Lavaplatos</span></label>
+            <label class="op"><input type="checkbox" name="lineas" value="cocina_integral"><span>Cocina integral</span></label>
+            <label class="op"><input type="checkbox" name="lineas" value="estufa"><span>Estufa</span></label>
+            <label class="op"><input type="checkbox" name="lineas" value="campana"><span>Campana</span></label>
+            <label class="op"><input type="checkbox" name="lineas" value="meson"><span>Mesón</span></label>
+          </div>
+        </fieldset>
 
-      <fieldset class="campo">
-        <legend>Líneas que vende</legend>
-        <div class="opciones">
-          <label class="op"><input type="checkbox" name="lineas" value="lavaplatos"><span>Lavaplatos</span></label>
-          <label class="op"><input type="checkbox" name="lineas" value="cocina_integral"><span>Cocina integral</span></label>
-          <label class="op"><input type="checkbox" name="lineas" value="estufa"><span>Estufa</span></label>
-          <label class="op"><input type="checkbox" name="lineas" value="campana"><span>Campana</span></label>
-          <label class="op"><input type="checkbox" name="lineas" value="meson"><span>Mesón</span></label>
-        </div>
-      </fieldset>
+        <label class="campo">Marca de competencia
+          <input id="visita-competencia" name="competencia" list="lista-marcas" maxlength="80" placeholder="La que más vende ahí">
+        </label>
 
-      <label class="campo">Marca de competencia
-        <input name="competencia" list="lista-marcas" maxlength="80" placeholder="Ej: nombre de la marca">
-      </label>
+        <label class="campo">Notas
+          <textarea id="visita-notas" name="notas" rows="2" maxlength="500"></textarea>
+        </label>
 
-      <label class="campo">Notas
-        <textarea name="notas" rows="3" maxlength="500"></textarea>
-      </label>
-
-      <div class="acciones">
-        <button type="button" class="btn btn-sec" data-cerrar>Cancelar</button>
-        <button class="btn btn-pri">Guardar</button>
+        <label class="campo">Fecha
+          <input id="visita-fecha" type="date" name="fecha" min="2000-01-01" max="2100-12-31" required>
+        </label>
       </div>
+
+      <footer class="hoja-pie">
+        <button class="btn btn-pri btn-ancho">Guardar visita</button>
+      </footer>
     </form>
   </dialog>
 
-  <dialog id="dlg-nueva">
-    <form id="form-nueva" class="form">
-      <header class="dlg-cab"><h2>Nueva ferretería</h2></header>
-      <label class="campo">Nombre *
-        <input name="nombre" required maxlength="120">
-      </label>
-      <label class="campo">Dirección
-        <input name="direccion" maxlength="160">
-      </label>
-      <label class="campo">Barrio
-        <input name="barrio" maxlength="80">
-      </label>
-      <label class="campo">Municipio
-        <input name="municipio" list="lista-municipios" maxlength="60">
-      </label>
-      <label class="campo">Teléfono
-        <input name="telefono" type="tel" maxlength="30">
-      </label>
-      <label class="campo">Zona
-        <input name="zona" list="lista-zonas" maxlength="40">
-      </label>
-      <div class="acciones">
-        <button type="button" class="btn btn-sec" data-cerrar>Cancelar</button>
-        <button class="btn btn-pri">Guardar</button>
+  <dialog id="dlg-nueva" class="hoja" aria-labelledby="dlg-nueva-titulo">
+    <form id="form-nueva" class="hoja-form">
+      <header class="hoja-cab">
+        <div><h2 id="dlg-nueva-titulo">Nueva ferretería</h2></div>
+        <button type="button" class="cerrar" data-cerrar aria-label="Cerrar">✕</button>
+      </header>
+      <div class="hoja-cuerpo">
+        <label class="campo">Nombre *
+          <input id="nueva-nombre" name="nombre" required maxlength="120">
+        </label>
+        <label class="campo">Dirección
+          <input id="nueva-direccion" name="direccion" maxlength="160">
+        </label>
+        <label class="campo">Barrio
+          <input id="nueva-barrio" name="barrio" maxlength="80">
+        </label>
+        <label class="campo">Municipio
+          <input id="nueva-municipio" name="municipio" list="lista-municipios" maxlength="60">
+        </label>
+        <label class="campo">Teléfono
+          <input id="nueva-telefono" name="telefono" type="tel" maxlength="30">
+        </label>
+        <label class="campo">Zona
+          <input id="nueva-zona" name="zona" list="lista-zonas" maxlength="40">
+        </label>
       </div>
+      <footer class="hoja-pie">
+        <button class="btn btn-pri btn-ancho">Guardar ferretería</button>
+      </footer>
     </form>
   </dialog>
 

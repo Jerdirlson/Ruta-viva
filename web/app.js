@@ -67,24 +67,37 @@
     setTimeout(() => URL.revokeObjectURL(url), 1000);
   }
 
+  // Ruta en Google Maps por las próximas paradas, en el orden de la lista.
+  // Google Maps en el celular acepta hasta 3 paradas intermedias más el destino.
+  const PARADAS_RUTA = 4;
+  function urlRuta(lista) {
+    const lugar = f => [f.direccion, f.barrio, f.municipio, 'Santander', 'Colombia'].filter(Boolean).join(', ');
+    const paradas = lista.slice(0, PARADAS_RUTA).map(lugar);
+    const destino = paradas.pop();
+    return 'https://www.google.com/maps/dir/?api=1&travelmode=driving&destination=' + encodeURIComponent(destino) +
+      (paradas.length ? '&waypoints=' + encodeURIComponent(paradas.join('|')) : '');
+  }
+
   // ---------- componentes ----------
+  // Toda la tarjeta abre la ficha; los tres botones de abajo hacen su propia acción.
   function tarjeta(f, aviso) {
     const tel = urlTel(f);
-    return '<article class="tarjeta">' +
-      '<div class="tarjeta-cab"><h3>' + esc(f.nombre) + '</h3>' + chip(f.estado) + '</div>' +
-      '<p class="dir">' + esc(f.direccion || 'Sin dirección') + '</p>' +
-      '<p class="meta">' + esc([f.barrio, f.municipio].filter(Boolean).join(' · ')) +
-        (f.zona ? ' · <strong>' + esc(f.zona) + '</strong>' : '') + '</p>' +
+    const lugar = [f.barrio, f.municipio].filter(Boolean).join(', ');
+    return '<article class="tarjeta" data-ficha="' + esc(f.id) + '">' +
+      '<div class="tarjeta-cab"><h3><button class="nombre" data-ficha="' + esc(f.id) + '">' + esc(f.nombre) +
+        '</button></h3>' + chip(f.estado) + '</div>' +
+      '<p class="meta"><span class="meta-dir">' + esc(f.direccion || 'Sin dirección') + '</span>' +
+        (lugar ? ' · ' + esc(lugar) : '') + '</p>' +
       '<p class="meta">' + (f.ultima
-        ? 'Última visita ' + fechaCorta(f.ultima.fecha) + ' (' + hace(f.ultima.fecha) + ')'
+        ? 'Última visita ' + fechaCorta(f.ultima.fecha) + ' · ' + hace(f.ultima.fecha)
         : 'Nunca visitada') + '</p>' +
       (aviso || '') +
-      '<div class="acciones">' +
-        '<a class="btn btn-sec" href="' + urlMaps(f) + '" target="_blank" rel="noopener">Maps</a>' +
-        (tel ? '<a class="btn btn-sec" href="' + tel + '">Llamar</a>' : '') +
+      '<div class="acciones-fila">' +
+        '<a class="btn" href="' + urlMaps(f) + '" target="_blank" rel="noopener">Maps</a>' +
+        (tel ? '<a class="btn" href="' + tel + '">Llamar</a>'
+             : '<span class="btn btn-off" aria-disabled="true">Sin teléfono</span>') +
         '<button class="btn btn-pri" data-visita="' + esc(f.id) + '">Visitar</button>' +
       '</div>' +
-      '<button class="enlace" data-ficha="' + esc(f.id) + '">Ver ficha</button>' +
     '</article>';
   }
 
@@ -102,36 +115,46 @@
 
   // ---------- vistas ----------
   function vistaHoy() {
-    const todas = DB.censo();
-    const pendientes = DB.pendientesHoy()
-      .filter(f => !ui.filtros.zonaHoy || f.zona === ui.filtros.zonaHoy)
-      .sort(ordenZona);
-    const zonas = unicos(todas.map(f => f.zona)).map(z => [z, z]);
-    const fecha = new Date().toLocaleDateString('es-CO', { weekday: 'long', day: 'numeric', month: 'long' });
+    const todasPendientes = DB.pendientesHoy().sort(ordenZona);
+    const zonaSigue = ui.filtros.zonaHoy && todasPendientes.some(f => f.zona === ui.filtros.zonaHoy);
+    if (!zonaSigue) ui.filtros.zonaHoy = '';
+    const pendientes = todasPendientes.filter(f => !ui.filtros.zonaHoy || f.zona === ui.filtros.zonaHoy);
+    const porZona = new Map();
+    todasPendientes.forEach(f => porZona.set(f.zona || '', (porZona.get(f.zona || '') || 0) + 1));
+    const fecha = new Date().toLocaleDateString('es-CO', { weekday: 'long', day: 'numeric', month: 'short' });
 
-    let html = '<section class="cabecera"><h2>Hoy</h2><p>' + esc(fecha) +
-      ' · <strong>' + pendientes.length + ' pendientes</strong></p></section>';
+    let html = '<section class="cabecera"><h2>Hoy</h2><p>' + esc(fecha) + '</p></section>';
     const sync = DB.estadoSync();
     if (sync.modo === 'servidor' && !sync.tieneClave) {
-      html += '<div class="aviso-bloque">Escribe la clave del equipo en <button class="enlace" data-ir="datos">Datos</button> ' +
-        'para enviar tus visitas y ver las del equipo.</div>';
+      html += '<div class="aviso-linea">Falta la clave del equipo <button class="enlace" data-ir="datos">Escribirla</button></div>';
     }
     if (!DB.obtenerVendedor()) {
-      html += '<div class="aviso-bloque">Escribe tu nombre en <button class="enlace" data-ir="datos">Datos</button> ' +
-        'para que tus visitas queden a tu nombre.</div>';
+      html += '<div class="aviso-linea">Falta tu nombre de vendedor <button class="enlace" data-ir="datos">Escribirlo</button></div>';
     }
-    html += '<div class="filtros"><select data-filtro="zonaHoy" aria-label="Zona">' +
-      opciones(zonas, ui.filtros.zonaHoy, 'Todas las zonas') + '</select></div>';
 
+    const chipZona = (valor, texto, n) => '<button class="chip-zona' + (valor === ui.filtros.zonaHoy ? ' activo' : '') +
+      '" data-zona-hoy="' + esc(valor) + '">' + esc(texto) + '<span>' + n + '</span></button>';
+    html += '<div class="chips-zona" role="group" aria-label="Zona">' +
+      chipZona('', 'Todas', todasPendientes.length) +
+      [...porZona.keys()].map(z => chipZona(z, z || 'Sin zona', porZona.get(z))).join('') + '</div>';
+
+    if (pendientes.length) {
+      const n = Math.min(PARADAS_RUTA, pendientes.length);
+      html += '<a class="btn btn-pri btn-ruta" href="' + urlRuta(pendientes) + '" target="_blank" rel="noopener">' +
+        'Abrir ruta en Maps · próximas ' + n + '</a>';
+    }
+
+    html += '<div class="lista-tarjetas">';
     let zonaAnterior = null;
     pendientes.forEach(f => {
       const z = f.zona || 'Sin zona';
-      if (z !== zonaAnterior) {
-        html += '<h2 class="grupo">' + esc(z) + '</h2>';
+      if (!ui.filtros.zonaHoy && z !== zonaAnterior) {
+        html += '<h3 class="grupo">' + esc(z) + '</h3>';
         zonaAnterior = z;
       }
       html += tarjeta(f, f.estado === 'seguimiento' ? '<p class="aviso">Pidió visita después</p>' : '');
     });
+    html += '</div>';
     if (!pendientes.length) html += '<p class="vacio">No hay visitas pendientes. ¡Buen trabajo!</p>';
     return html;
   }
@@ -141,17 +164,18 @@
     const estados = Object.keys(DB.ESTADOS).map(k => [k, DB.ESTADOS[k]]);
     const zonas = unicos(todas.map(f => f.zona)).map(z => [z, z]);
     const municipios = unicos(todas.map(f => f.municipio)).map(m => [m, m]);
-    return '<section class="cabecera"><h2>Censo</h2><p id="conteo"></p></section>' +
+    return '<section class="cabecera"><h2>Censo</h2>' +
+        '<button class="btn btn-chico" data-nueva>+ Nueva</button></section>' +
       '<div class="filtros">' +
-        '<input type="search" data-filtro="q" placeholder="Buscar por nombre o barrio" value="' +
+        '<input id="buscar" type="search" data-filtro="q" placeholder="Buscar por nombre o barrio" value="' +
           esc(ui.filtros.q) + '" aria-label="Buscar">' +
-        '<select data-filtro="zona" aria-label="Zona">' + opciones(zonas, ui.filtros.zona, 'Todas las zonas') + '</select>' +
-        '<select data-filtro="municipio" aria-label="Municipio">' +
-          opciones(municipios, ui.filtros.municipio, 'Todos los municipios') + '</select>' +
-        '<select data-filtro="estado" aria-label="Estado">' + opciones(estados, ui.filtros.estado, 'Todos los estados') + '</select>' +
+        '<select id="filtro-zona" data-filtro="zona" aria-label="Zona">' + opciones(zonas, ui.filtros.zona, 'Zona') + '</select>' +
+        '<select id="filtro-municipio" data-filtro="municipio" aria-label="Municipio">' +
+          opciones(municipios, ui.filtros.municipio, 'Municipio') + '</select>' +
+        '<select id="filtro-estado" data-filtro="estado" aria-label="Estado">' + opciones(estados, ui.filtros.estado, 'Estado') + '</select>' +
       '</div>' +
-      '<button class="btn btn-pri btn-ancho" data-nueva>+ Nueva ferretería</button>' +
-      '<div id="lista"></div>';
+      '<p id="conteo" class="cuenta"></p>' +
+      '<div id="lista" class="lista-tarjetas"></div>';
   }
 
   // Solo repinta la lista, para no perder el foco al escribir en el buscador.
@@ -285,7 +309,7 @@
 
   function estadoActual() {
     const s = DB.estadoSync();
-    if (s.modo !== 'servidor') return { texto: 'Modo local · datos solo en este celular', clase: 'neutro' };
+    if (s.modo !== 'servidor') return { texto: 'Modo local', clase: 'neutro' };
     if (sincronizandoAhora) return { texto: 'Sincronizando…', clase: 'neutro' };
     if (!s.tieneClave) return { texto: 'Falta la clave del equipo', clase: 'alerta' };
     const r = ultimoSync && ultimoSync.estado;
@@ -383,9 +407,17 @@
 
   // ---------- eventos ----------
   document.addEventListener('click', e => {
-    const t = e.target.closest('[data-ir],[data-ficha],[data-visita],[data-nueva],[data-periodo],[data-accion],[data-cerrar]');
+    // Maps, Llamar y la ruta son enlaces: que hagan lo suyo sin abrir además la ficha.
+    if (e.target.closest('a[href]')) return;
+    const t = e.target.closest(
+      '[data-ir],[data-ficha],[data-visita],[data-nueva],[data-periodo],[data-accion],[data-cerrar],[data-zona-hoy]'
+    );
     if (!t) return;
     if (t.hasAttribute('data-cerrar')) return t.closest('dialog').close();
+    if (t.hasAttribute('data-zona-hoy')) {
+      ui.filtros.zonaHoy = t.dataset.zonaHoy;
+      return render();
+    }
     if (t.hasAttribute('data-visita')) return abrirVisita(t.dataset.visita);
     if (t.hasAttribute('data-nueva')) return abrirNueva();
     if (t.hasAttribute('data-accion')) return accion(t.dataset.accion);
