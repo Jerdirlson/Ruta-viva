@@ -17,9 +17,8 @@ export default function HoyScreen({ navigation }) {
   // Varias ferreterías en el mismo sitio (mismo edificio): se elige de una lista.
   const [varias, setVarias] = useState(null);
   const elegir = f => { setVarias(null); setSeleccionada(f); };
-  // Leyenda del mapa como filtro: colores ocultos (por ejemplo, ver solo los clientes).
-  const [ocultos, setOcultos] = useState([]);
-  const alternarColor = c => setOcultos(o => (o.includes(c) ? o.filter(x => x !== c) : o.concat(c)));
+  // Filtro del mapa por estado (los mismos colores de la leyenda): '' = todos.
+  const [soloColor, setSoloColor] = useState('');
 
   const todas = useMemo(() => pendientesDe(censo).sort(ordenZona), [censo]);
   const porZona = useMemo(() => {
@@ -85,20 +84,31 @@ export default function HoyScreen({ navigation }) {
   );
 
   if (vista === 'mapa') {
-    const delMapa = censo.filter(f => f.estado !== 'descartada' && (!zonaActiva || grupoDe(f) === zonaActiva) && !ocultos.includes(colorPin(f)));
+    const delaZonaMapa = censo.filter(f => f.estado !== 'descartada' && (!zonaActiva || grupoDe(f) === zonaActiva));
+    const porColor = {};
+    delaZonaMapa.forEach(f => { const c = colorPin(f); porColor[c] = (porColor[c] || 0) + 1; });
+    const delMapa = soloColor ? delaZonaMapa.filter(f => colorPin(f) === soloColor) : delaZonaMapa;
     const sinUbicar = delMapa.filter(f => f.lat == null).length;
     return (
       <View style={s.pantalla}>
         <View style={s.cabeceraMapa}>{cabecera}</View>
-        <View style={s.leyenda}>
-          {[['rojo', 'Pendiente'], ['amarillo', 'Pidió visita'], ['verde', 'Cliente'], ['gris', 'Visitada']].map(([c, t]) => (
-            <Pressable key={c} onPress={() => alternarColor(c)} accessibilityRole="button" accessibilityState={{ selected: !ocultos.includes(c) }}
-              hitSlop={8} style={[s.itemLeyenda, ocultos.includes(c) && { opacity: 0.35 }]} testID={'leyenda-' + c}>
-              <View style={[s.punto, { backgroundColor: color.pin[c] }]} /><Text style={[s.textoLeyenda, ocultos.includes(c) && s.tachado]}>{t}</Text>
-            </Pressable>
-          ))}
-          {sinUbicar ? <Text style={s.textoLeyenda}>{'· ' + sinUbicar + ' sin ubicar'}</Text> : null}
-        </View>
+        {/* Filtro por estado: tocar uno muestra solo esos; "Todos" vuelve a mostrarlo todo. */}
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={s.filtrosMapa} style={{ flexGrow: 0 }}>
+          {[['', 'Todos'], ['rojo', 'Pendientes'], ['amarillo', 'Pidió visita'], ['verde', 'Clientes'], ['gris', 'Visitadas']].map(([c, t]) => {
+            const activo = soloColor === c;
+            return (
+              <Pressable key={c || 'todos'} onPress={() => { setSoloColor(c); setSeleccionada(null); setVarias(null); }}
+                accessibilityRole="button" accessibilityState={{ selected: activo }} testID={'filtro-mapa-' + (c || 'todos')}
+                style={({ pressed }) => [s.filtroMapa, activo && s.filtroMapaActivo, pressed && { opacity: 0.8 }]}>
+                {c ? <View style={[s.punto, { backgroundColor: color.pin[c] }]} /> : null}
+                <Text style={[s.filtroMapaTexto, activo && s.filtroMapaTextoActivo]}>
+                  {t + ' ' + (c ? porColor[c] || 0 : delaZonaMapa.length)}
+                </Text>
+              </Pressable>
+            );
+          })}
+        </ScrollView>
+        {sinUbicar ? <Text style={[s.textoLeyenda, s.sinUbicar]}>{sinUbicar + ' de estas sin ubicar en el mapa'}</Text> : null}
         <View style={s.mapa}>
           <MapaHoy lista={delMapa} posicion={posicion} elegidaId={seleccionada && seleccionada.id}
             onSeleccionar={elegir} onElegirVarias={lista => { setSeleccionada(null); setVarias(lista); }} />
@@ -162,7 +172,13 @@ const s = StyleSheet.create({
   vacio: { color: color.suave, paddingVertical: 16, fontSize: letra.normal },
   leyenda: { flexDirection: 'row', flexWrap: 'wrap', gap: 12, paddingHorizontal: 16, paddingBottom: 8 },
   itemLeyenda: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingVertical: 4 },
-  tachado: { textDecorationLine: 'line-through' },
+  filtrosMapa: { gap: 8, paddingHorizontal: 16, paddingBottom: 8 },
+  filtroMapa: { minHeight: 40, flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 12, borderRadius: radio.pastilla,
+    borderWidth: 2, borderColor: color.lineaFuerte, backgroundColor: color.fondo },
+  filtroMapaActivo: { backgroundColor: color.grafito, borderColor: color.grafito },
+  filtroMapaTexto: { fontSize: letra.chica, fontWeight: '700', color: color.texto },
+  filtroMapaTextoActivo: { color: color.grafitoTexto },
+  sinUbicar: { paddingHorizontal: 16, paddingBottom: 6 },
   punto: { width: 14, height: 14, borderRadius: 7, borderWidth: 2, borderColor: color.fondo },
   textoLeyenda: { fontSize: letra.mini, color: color.suave },
   mapa: { flex: 1, minHeight: 280, marginHorizontal: 16, marginBottom: 16, borderRadius: 14, overflow: 'hidden', borderWidth: 1, borderColor: color.linea },
