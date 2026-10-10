@@ -1,5 +1,5 @@
 // Ruta-viva — app nativa para los vendedores de SOCODA.
-import React from 'react';
+import React, { useEffect } from 'react';
 import { ActivityIndicator, StyleSheet, Text, View } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
@@ -21,6 +21,7 @@ import NuevaScreen from './src/pantallas/NuevaScreen';
 import IngresoScreen from './src/pantallas/IngresoScreen';
 import CambiarClaveScreen from './src/pantallas/CambiarClaveScreen';
 import UsuariosScreen from './src/pantallas/UsuariosScreen';
+import { actualizarAlAbrir } from './src/datos/actualizaciones';
 
 const Pila = createNativeStackNavigator();
 const Pestanas = createBottomTabNavigator();
@@ -119,6 +120,7 @@ function Raiz() {
 }
 
 export default function App() {
+  useEffect(() => { actualizarAlAbrir(); }, []);
   return (
     <SafeAreaProvider>
       <AppProvider>

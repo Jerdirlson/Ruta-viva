@@ -6,6 +6,7 @@ import { hoyISO, LIMITES } from '../nucleo/reglas';
 import { useApp, API_URL } from '../estado/AppContext';
 import { Boton } from '../componentes/ui';
 import { elegirArchivoTexto, compartirTexto, compartirBytes } from '../datos/archivos';
+import { buscarActualizacion, versionActual } from '../datos/actualizaciones';
 import { textoEstadoSync } from '../componentes/EstadoSync';
 
 function Bloque({ titulo, children }) {
@@ -132,6 +133,23 @@ export default function DatosScreen({ navigation }) {
       <Bloque titulo="Exportar">
         <Boton titulo="Compartir censo (CSV)" onPress={exportar} />
         <Boton titulo="Compartir respaldo completo" onPress={respaldar} />
+      </Bloque>
+
+      <Bloque titulo="Versión de la app">
+        <Text style={s.ayuda} testID="version">
+          {(() => {
+            const v = versionActual();
+            if (v.original || !v.fecha) return 'La que vino con la instalación';
+            return 'Actualizada el ' + v.fecha.toLocaleDateString('es-CO', { day: 'numeric', month: 'short' }) + ' a las ' +
+              v.fecha.toLocaleTimeString('es-CO', { hour: '2-digit', minute: '2-digit' }) + ' · ' + v.id;
+          })()}
+        </Text>
+        <Boton titulo="Buscar actualización" onPress={conError(async () => {
+          avisar('Buscando actualización…');
+          const r = await buscarActualizacion();
+          if (r === 'al-dia') avisar('Ya tienes la última versión');
+          if (r === 'no-disponible') avisar('Esta copia de la app no recibe actualizaciones');
+        })} testID="buscar-actualizacion" />
       </Bloque>
 
       <Bloque titulo="Restaurar respaldo">
