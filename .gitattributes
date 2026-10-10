@@ -1,0 +1,3 @@
+# eas.json entra en la huella del código nativo (runtimeVersion): con CRLF la huella cambia
+# y las actualizaciones OTA no le llegan al APK. Siempre LF.
+app/eas.json text eol=lf
