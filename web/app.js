@@ -7,6 +7,9 @@
     vista: 'hoy',
     ferreteriaId: null,
     periodo: 30,
+    modoHoy: 'lista',     // 'lista' | 'mapa'
+    // Posición del vendedor: solo en memoria, para ordenar por cercanía. Nunca se guarda ni se envía.
+    posicion: null,       // { lat, lng, precision, hora }
     filtros: { q: '', zona: '', municipio: '', estado: '', zonaHoy: '' }
   };
 
@@ -35,9 +38,77 @@
     if (n === 1) return 'ayer';
     return 'hace ' + n + ' días';
   }
+  // Con ubicación guardada, Maps va al punto exacto; si no, busca la dirección.
+  function lugarMaps(f) {
+    if (f.lat != null && f.lng != null) return f.lat + ',' + f.lng;
+    return [f.direccion, f.barrio, f.municipio, 'Santander', 'Colombia'].filter(Boolean).join(', ');
+  }
   function urlMaps(f) {
-    const q = [f.direccion, f.barrio, f.municipio, 'Santander', 'Colombia'].filter(Boolean).join(', ');
-    return 'https://www.google.com/maps/search/?api=1&query=' + encodeURIComponent(q);
+    return 'https://www.google.com/maps/search/?api=1&query=' + encodeURIComponent(lugarMaps(f));
+  }
+
+  // ---------- ubicación ----------
+  function distanciaM(a, b) {
+    const rad = x => x * Math.PI / 180;
+    const dLat = rad(b.lat - a.lat);
+    const dLng = rad(b.lng - a.lng);
+    const h = Math.sin(dLat / 2) ** 2 + Math.cos(rad(a.lat)) * Math.cos(rad(b.lat)) * Math.sin(dLng / 2) ** 2;
+    return 2 * 6371000 * Math.asin(Math.sqrt(h));
+  }
+  function textoDistancia(m) {
+    if (m < 1000) return Math.max(10, Math.round(m / 10) * 10) + ' m';
+    return (m / 1000).toLocaleString('es-CO', { maximumFractionDigits: 1 }) + ' km';
+  }
+  function distanciaA(f) {
+    return ui.posicion && f.lat != null ? distanciaM(ui.posicion, f) : null;
+  }
+
+  const ERRORES_UBICACION = {
+    1: 'Sin permiso de ubicación. Actívalo para esta app en los ajustes del navegador.',
+    2: 'No se pudo obtener la ubicación. Revisa que el GPS esté encendido.',
+    3: 'La ubicación tardó demasiado. Intenta de nuevo a cielo abierto.'
+  };
+  function obtenerPosicion(frescura) {
+    return new Promise((resolver, rechazar) => {
+      if (!('geolocation' in navigator) || !window.isSecureContext) {
+        return rechazar(new Error('Este navegador no permite ubicar el celular (se necesita HTTPS).'));
+      }
+      navigator.geolocation.getCurrentPosition(
+        p => resolver({ lat: p.coords.latitude, lng: p.coords.longitude, precision: p.coords.accuracy, hora: Date.now() }),
+        e => rechazar(new Error(ERRORES_UBICACION[e.code] || 'No se pudo obtener la ubicación.')),
+        { enableHighAccuracy: true, timeout: 15000, maximumAge: frescura }
+      );
+    });
+  }
+
+  async function ubicarme() {
+    toast('Buscando tu ubicación…');
+    try {
+      ui.posicion = await obtenerPosicion(60000);
+      toast('Ordenado por cercanía');
+      render();
+    } catch (e) {
+      toast(e.message);
+    }
+  }
+
+  // Precisión máxima aceptada al guardar la ubicación de una ferretería.
+  const PRECISION_MAX_M = 100;
+  async function guardarUbicacionAqui(id) {
+    toast('Tomando la ubicación con el GPS…');
+    try {
+      const p = await obtenerPosicion(0);
+      if (p.precision > PRECISION_MAX_M) {
+        return toast('Precisión de ±' + Math.round(p.precision) + ' m, muy baja. Párate en la entrada, a cielo abierto, e intenta de nuevo.');
+      }
+      DB.guardarUbicacion(id, p.lat, p.lng);
+      ui.posicion = p;
+      toast('Ubicación guardada (±' + Math.round(p.precision) + ' m)');
+      render();
+      programarSync();
+    } catch (e) {
+      toast(e.message);
+    }
   }
   function urlTel(f) {
     const n = String(f.telefono || '').replace(/[^\d+]/g, '');
@@ -67,15 +138,37 @@
     setTimeout(() => URL.revokeObjectURL(url), 1000);
   }
 
-  // Ruta en Google Maps por las próximas paradas, en el orden de la lista.
-  // Google Maps en el celular acepta hasta 3 paradas intermedias más el destino.
+  // Ruta en Google Maps por las próximas paradas. Google Maps en el celular acepta
+  // hasta 3 paradas intermedias más el destino. Sin destino de partida, Maps sale
+  // desde donde está el celular.
   const PARADAS_RUTA = 4;
   function urlRuta(lista) {
-    const lugar = f => [f.direccion, f.barrio, f.municipio, 'Santander', 'Colombia'].filter(Boolean).join(', ');
-    const paradas = lista.slice(0, PARADAS_RUTA).map(lugar);
+    const paradas = lista.slice(0, PARADAS_RUTA).map(lugarMaps);
     const destino = paradas.pop();
     return 'https://www.google.com/maps/dir/?api=1&travelmode=driving&destination=' + encodeURIComponent(destino) +
       (paradas.length ? '&waypoints=' + encodeURIComponent(paradas.join('|')) : '');
+  }
+
+  // Con la ubicación del vendedor: siempre a la más cercana desde la última parada.
+  function paradasCercanas(lista, desde, n) {
+    const quedan = lista.filter(f => f.lat != null);
+    const ruta = [];
+    let actual = desde;
+    while (ruta.length < n && quedan.length) {
+      let mejor = 0;
+      quedan.forEach((f, i) => { if (distanciaM(actual, f) < distanciaM(actual, quedan[mejor])) mejor = i; });
+      actual = quedan.splice(mejor, 1)[0];
+      ruta.push(actual);
+    }
+    return ruta;
+  }
+
+  // Color del pin según lo que el vendedor tiene que hacer. Los colores viven en styles.css.
+  function claseColor(f) {
+    if (f.estado === 'seguimiento') return 'amarillo';
+    if (f.diasSinVisita > DB.DIAS_SIN_VISITA) return 'rojo';
+    if (f.estado === 'cliente') return 'verde';
+    return 'gris';
   }
 
   // ---------- componentes ----------
@@ -86,7 +179,8 @@
     return '<article class="tarjeta" data-ficha="' + esc(f.id) + '">' +
       '<div class="tarjeta-cab"><h3><button class="nombre" data-ficha="' + esc(f.id) + '">' + esc(f.nombre) +
         '</button></h3>' + chip(f.estado) + '</div>' +
-      '<p class="meta"><span class="meta-dir">' + esc(f.direccion || 'Sin dirección') + '</span>' +
+      '<p class="meta">' + (distanciaA(f) != null ? '<strong class="distancia">' + textoDistancia(distanciaA(f)) + '</strong> · ' : '') +
+        '<span class="meta-dir">' + esc(f.direccion || 'Sin dirección') + '</span>' +
         (lugar ? ' · ' + esc(lugar) : '') + '</p>' +
       '<p class="meta">' + (f.ultima
         ? 'Última visita ' + fechaCorta(f.ultima.fecha) + ' · ' + hace(f.ultima.fecha)
@@ -138,17 +232,56 @@
       chipZona('', 'Todas', todasPendientes.length) +
       [...porZona.keys()].map(z => chipZona(z, z || 'Sin zona', porZona.get(z))).join('') + '</div>';
 
-    if (pendientes.length) {
-      const n = Math.min(PARADAS_RUTA, pendientes.length);
-      html += '<a class="btn btn-pri btn-ruta" href="' + urlRuta(pendientes) + '" target="_blank" rel="noopener">' +
-        'Abrir ruta en Maps · próximas ' + n + '</a>';
+    html += '<div class="controles-hoy">' +
+      '<div class="segmento" role="group" aria-label="Ver como">' +
+        '<button data-modo-hoy="lista" class="' + (ui.modoHoy === 'lista' ? 'activo' : '') + '">Lista</button>' +
+        '<button data-modo-hoy="mapa" class="' + (ui.modoHoy === 'mapa' ? 'activo' : '') + '">Mapa</button>' +
+      '</div>' +
+      '<button class="btn" data-accion="cerca">Cerca de mí</button>' +
+    '</div>';
+    if (ui.posicion) {
+      const min = Math.round((Date.now() - ui.posicion.hora) / 60000);
+      html += '<p class="ayuda">Por cercanía · ubicado ' + (min < 1 ? 'ahora' : 'hace ' + min + ' min') + '</p>';
     }
+
+    // Con ubicación: las ubicadas por distancia y las sin ubicar al final.
+    let ruta = pendientes;
+    if (ui.posicion) {
+      pendientes.sort((a, b) => (distanciaA(a) ?? Infinity) - (distanciaA(b) ?? Infinity));
+      const cercanas = paradasCercanas(pendientes, ui.posicion, PARADAS_RUTA);
+      if (cercanas.length) ruta = cercanas;
+    }
+    const botonRuta = pendientes.length
+      ? '<a class="btn btn-pri btn-ruta" href="' + urlRuta(ruta) + '" target="_blank" rel="noopener">' +
+        'Abrir ruta en Maps · ' + (ruta !== pendientes ? Math.min(PARADAS_RUTA, ruta.length) + ' más cercanas'
+          : 'próximas ' + Math.min(PARADAS_RUTA, ruta.length)) + '</a>'
+      : '';
+
+    if (ui.modoHoy === 'mapa') {
+      // El mapa muestra todo el censo de la zona: también clientes, para ubicarse.
+      const delMapa = DB.censo().filter(f => !ui.filtros.zonaHoy || f.zona === ui.filtros.zonaHoy);
+      const sinUbicar = delMapa.filter(f => f.lat == null).length;
+      ultimoMapa = delMapa;
+      html += '<div id="mapa" class="mapa" role="region" aria-label="Mapa de ferreterías"></div>' +
+        '<ul class="leyenda">' +
+          '<li><span class="punto punto-rojo"></span>Pendiente</li>' +
+          '<li><span class="punto punto-amarillo"></span>Pidió visita</li>' +
+          '<li><span class="punto punto-verde"></span>Cliente</li>' +
+          '<li><span class="punto punto-gris"></span>Visitada</li>' +
+          (ui.posicion ? '<li><span class="punto punto-yo"></span>Tú</li>' : '') +
+        '</ul>' +
+        (sinUbicar ? '<p class="ayuda">' + sinUbicar + ' sin ubicar. Ábrelas en la lista y toca "Guardar ubicación aquí" cuando estés en la ferretería.</p>' : '') +
+        botonRuta;
+      return html;
+    }
+
+    html += botonRuta;
 
     html += '<div class="lista-tarjetas">';
     let zonaAnterior = null;
     pendientes.forEach(f => {
       const z = f.zona || 'Sin zona';
-      if (!ui.filtros.zonaHoy && z !== zonaAnterior) {
+      if (!ui.posicion && !ui.filtros.zonaHoy && z !== zonaAnterior) {
         html += '<h3 class="grupo">' + esc(z) + '</h3>';
         zonaAnterior = z;
       }
@@ -206,7 +339,12 @@
     return '<button class="enlace" data-ir="censo">← Volver al censo</button>' +
       '<section class="ficha"><h2>' + esc(f.nombre) + '</h2><p>' + chip(f.estado) + '</p>' +
         '<dl>' + fila('Dirección', f.direccion) + fila('Barrio', f.barrio) +
-          fila('Municipio', f.municipio) + fila('Zona', f.zona) + fila('Teléfono', f.telefono) + '</dl>' +
+          fila('Municipio', f.municipio) + fila('Zona', f.zona) + fila('Teléfono', f.telefono) +
+          '<div><dt>Ubicación</dt><dd>' + (f.lat != null
+            ? 'Guardada' + (distanciaA(f) != null ? ' · a ' + textoDistancia(distanciaA(f)) + ' de ti' : '')
+            : 'Sin ubicar') + '</dd></div></dl>' +
+        '<button class="btn btn-ancho" data-accion="ubicar" data-id="' + esc(f.id) + '">' +
+          (f.lat != null ? 'Actualizar ubicación aquí' : 'Guardar ubicación aquí') + '</button>' +
         '<div class="acciones">' +
           '<a class="btn btn-sec" href="' + urlMaps(f) + '" target="_blank" rel="noopener">Abrir en Maps</a>' +
           (tel ? '<a class="btn btn-sec" href="' + tel + '">Llamar</a>' : '') +
@@ -286,11 +424,70 @@
 
   // ---------- render ----------
   function render() {
+    destruirMapa();
     const vistas = { hoy: vistaHoy, censo: vistaCenso, ficha: vistaFicha, resumen: vistaResumen, datos: vistaDatos };
     main.innerHTML = (vistas[ui.vista] || vistaHoy)();
     document.querySelectorAll('[data-nav]').forEach(b => b.classList.toggle('activo', b.dataset.ir === ui.vista));
     if (ui.vista === 'censo') pintarLista();
+    if (ui.vista === 'hoy' && ui.modoHoy === 'mapa') pintarMapa(ultimoMapa);
     pintarEstado();
+  }
+
+  // ---------- mapa (Leaflet + OpenStreetMap) ----------
+  let mapa = null;
+  let ultimoMapa = [];
+  const CENTRO_AMB = [7.1, -73.12]; // área metropolitana de Bucaramanga
+
+  function destruirMapa() {
+    if (mapa) { mapa.remove(); mapa = null; }
+  }
+
+  function popupFerreteria(f) {
+    const tel = urlTel(f);
+    const d = distanciaA(f);
+    return '<div class="popup">' +
+      '<strong>' + esc(f.nombre) + '</strong>' +
+      '<p class="meta">' + chip(f.estado) + (d != null ? ' · ' + textoDistancia(d) : '') + '</p>' +
+      '<p class="meta">' + esc([f.direccion, f.barrio].filter(Boolean).join(' · ')) + '</p>' +
+      '<div class="acciones-fila">' +
+        '<a class="btn" href="' + urlMaps(f) + '" target="_blank" rel="noopener">Maps</a>' +
+        (tel ? '<a class="btn" href="' + tel + '">Llamar</a>' : '<span class="btn btn-off" aria-disabled="true">Sin tel.</span>') +
+        '<button class="btn btn-pri" data-visita="' + esc(f.id) + '">Visitar</button>' +
+      '</div>' +
+    '</div>';
+  }
+
+  function pintarMapa(lista) {
+    const el = document.getElementById('mapa');
+    if (!el) return;
+    if (!window.L) {
+      el.innerHTML = '<p class="vacio">No se pudo cargar el mapa.</p>';
+      return;
+    }
+    const css = getComputedStyle(document.documentElement);
+    const color = nombre => css.getPropertyValue('--' + nombre).trim();
+    mapa = L.map(el, { zoomControl: false });
+    L.control.zoom({ position: 'bottomright' }).addTo(mapa);
+    L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      maxZoom: 19,
+      attribution: '© <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a>'
+    }).addTo(mapa);
+
+    const puntos = [];
+    lista.filter(f => f.lat != null).forEach(f => {
+      L.circleMarker([f.lat, f.lng], {
+        radius: 11, weight: 3, color: color('fondo'), fillColor: color('pin-' + claseColor(f)), fillOpacity: 1
+      }).bindPopup(popupFerreteria(f), { maxWidth: 280, minWidth: 240 }).addTo(mapa);
+      puntos.push([f.lat, f.lng]);
+    });
+    if (ui.posicion) {
+      L.circleMarker([ui.posicion.lat, ui.posicion.lng], {
+        radius: 8, weight: 3, color: color('fondo'), fillColor: color('pin-yo'), fillOpacity: 1, interactive: false
+      }).addTo(mapa);
+      puntos.push([ui.posicion.lat, ui.posicion.lng]);
+    }
+    if (puntos.length) mapa.fitBounds(puntos, { padding: [32, 32], maxZoom: 16 });
+    else mapa.setView(CENTRO_AMB, 12);
   }
 
   // ---------- sincronización ----------
@@ -396,8 +593,10 @@
   }
 
   // ---------- acciones ----------
-  function accion(nombre) {
+  function accion(nombre, boton) {
     if (nombre === 'sync') return sincronizarAhora(true);
+    if (nombre === 'cerca') return ubicarme();
+    if (nombre === 'ubicar') return guardarUbicacionAqui(boton.dataset.id);
     try {
       const hoy = DB.hoyISO();
       if (nombre === 'csv') descargar('censo_socoda_' + hoy + '.csv', DB.exportarCSV(), 'text/csv;charset=utf-8');
@@ -412,7 +611,7 @@
     // Maps, Llamar y la ruta son enlaces: que hagan lo suyo sin abrir además la ficha.
     if (e.target.closest('a[href]')) return;
     const t = e.target.closest(
-      '[data-ir],[data-ficha],[data-visita],[data-nueva],[data-periodo],[data-accion],[data-cerrar],[data-zona-hoy]'
+      '[data-ir],[data-ficha],[data-visita],[data-nueva],[data-periodo],[data-accion],[data-cerrar],[data-zona-hoy],[data-modo-hoy]'
     );
     if (!t) return;
     if (t.hasAttribute('data-cerrar')) return t.closest('dialog').close();
@@ -420,9 +619,13 @@
       ui.filtros.zonaHoy = t.dataset.zonaHoy;
       return render();
     }
+    if (t.hasAttribute('data-modo-hoy')) {
+      ui.modoHoy = t.dataset.modoHoy;
+      return render();
+    }
     if (t.hasAttribute('data-visita')) return abrirVisita(t.dataset.visita);
     if (t.hasAttribute('data-nueva')) return abrirNueva();
-    if (t.hasAttribute('data-accion')) return accion(t.dataset.accion);
+    if (t.hasAttribute('data-accion')) return accion(t.dataset.accion, t);
     if (t.hasAttribute('data-ficha')) {
       ui.ferreteriaId = t.dataset.ficha;
       ui.vista = 'ficha';

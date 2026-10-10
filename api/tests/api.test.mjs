@@ -147,3 +147,25 @@ test('migrar fija el rol de la app sin privilegios especiales', { skip: omitir }
     await admin.end();
   }
 });
+
+test('guarda la ubicación y un envío sin ubicación no la borra', { skip: omitir }, async () => {
+  let j = await (await sync({ ferreterias: [ferre('u1', { lat: 7.1186, lng: -73.1105 })] })).json();
+  assert.deepEqual([j.ferreterias.find(f => f.id === 'u1').lat, j.ferreterias.find(f => f.id === 'u1').lng], [7.1186, -73.1105]);
+  j = await (await sync({ ferreterias: [ferre('u1', { telefono: '3009998877' })] })).json();
+  const f = j.ferreterias.find(x => x.id === 'u1');
+  assert.equal(f.telefono, '3009998877');
+  assert.deepEqual([f.lat, f.lng], [7.1186, -73.1105]);
+});
+
+test('ubicación incompleta o fuera de rango se rechaza con motivo', { skip: omitir }, async () => {
+  const j = await (await sync({ ferreterias: [ferre('u2', { lat: 7.1 }), ferre('u3', { lat: 200, lng: 0 })] })).json();
+  const motivos = Object.fromEntries(j.rechazadas.map(r => [r.id, r.motivo]));
+  assert.match(motivos.u2, /incompleta/);
+  assert.match(motivos.u3, /rango/);
+});
+
+test('la política de contenido permite solo las teselas de OpenStreetMap', { skip: omitir }, async () => {
+  const csp = (await fetch(base + '/')).headers.get('content-security-policy');
+  assert.match(csp, /img-src 'self' data: https:\/\/tile\.openstreetmap\.org;/);
+  assert.match(csp, /default-src 'self'/);
+});

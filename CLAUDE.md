@@ -16,6 +16,10 @@ bash api/run-tests.sh                      # pruebas del API contra Postgres des
 
 **Los límites viven en tres lugares y deben coincidir:** `api/migrations/*.sql` (restricciones de la tabla), `api/src/validar.js` y `LIMITES` en `web/db.js`. Si se cambia uno, se cambian los tres. Si no, lo que hoy se guarda en el teléfono será rechazado por el servidor mañana.
 
+**La ubicación de la ferretería** (`lat`, `lng`) sigue la misma regla de los tres lugares: migración 002, `validarCoordenadas` en `api/src/validar.js` y en `web/db.js`. Van juntas o no van. El servidor nunca borra una ubicación guardada con un envío que no la trae (`coalesce`).
+
+**La posición del vendedor no se guarda ni se envía.** Solo vive en memoria (`ui.posicion` en `web/app.js`) para ordenar por cercanía. No agregar rastreo de vendedores.
+
 **Local-first.** `web/db.js` es la única parte de la app que toca `localStorage` y el API. Todo cambio se guarda primero en el teléfono y entra a la cola `pendientes`; `sincronizar()` la envía y recibe el estado completo. Los ids se generan en el teléfono para que reenviar no duplique.
 
 **Las visitas son historial: no se borran.** El rol `rutaviva_app` no tiene `DELETE`, y una prueba lo verifica intentándolo. No darle más permisos que `select, insert, update`.
@@ -30,5 +34,5 @@ bash api/run-tests.sh                      # pruebas del API contra Postgres des
 
 ## Estado
 
-- Listo y probado en local: app, sincronización entre varios celulares, cola sin conexión, API, migraciones, respaldo y restauración.
+- Listo y probado en local: app, sincronización entre varios celulares, cola sin conexión, API, migraciones, respaldo y restauración, mapa, "Cerca de mí", ruta por cercanía y "Guardar ubicación aquí".
 - Pendiente: mapear el Excel real del censo, íconos PNG para instalar, elegir servidor y desplegar, y probar en celulares físicos.

@@ -28,6 +28,12 @@
   --aviso-fondo: #fff4cc;
   --aviso-texto: #5c3d00;
   --info-fondo: #eceeef;
+  /* Pines del mapa: qué tiene que hacer el vendedor en cada ferretería */
+  --pin-rojo: #e90128;       /* pendiente (rojo SOCODA) */
+  --pin-amarillo: #f2b600;   /* pidió visita después */
+  --pin-verde: #1f9d55;      /* cliente */
+  --pin-gris: #8c8c8c;       /* visitada hace poco */
+  --pin-yo: #1a73e8;         /* el vendedor (azul, como en Google Maps) */
   --radio: 14px;
   --radio-chico: 10px;
   color-scheme: light;
@@ -445,6 +451,44 @@ dialog.hoja::backdrop { background: rgba(10, 16, 28, .55); }
   pointer-events: none;
 }
 .toast.visible { opacity: 1; transform: none; }
+
+/* Hoy: Lista | Mapa y Cerca de mí */
+.controles-hoy { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.distancia { color: var(--texto); }
+
+/* Mapa */
+.mapa {
+  height: min(62dvh, 560px);
+  border: 1px solid var(--linea);
+  border-radius: var(--radio);
+  overflow: hidden;
+  background: var(--superficie);
+  z-index: 0;
+}
+.mapa .leaflet-popup-content { margin: 12px; font: inherit; font-size: .95rem; }
+.mapa .leaflet-popup-content p { margin: 4px 0; }
+.popup { display: grid; gap: 4px; }
+.popup .acciones-fila { margin-top: 6px; }
+.popup .btn { min-height: 44px; padding: 6px 8px; font-size: .9rem; }
+.mapa .leaflet-popup-content a.btn { color: var(--grafito); }
+.mapa .leaflet-popup-content a.btn-pri, .mapa .leaflet-popup-content .btn-pri { color: var(--marca-texto); }
+.leyenda {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 14px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-size: .9rem;
+  color: var(--suave);
+}
+.leyenda li { display: flex; align-items: center; gap: 6px; }
+.punto { width: 14px; height: 14px; border-radius: 50%; border: 2px solid var(--fondo); box-shadow: 0 0 0 1px var(--linea-fuerte); }
+.punto-rojo { background: var(--pin-rojo); }
+.punto-amarillo { background: var(--pin-amarillo); }
+.punto-verde { background: var(--pin-verde); }
+.punto-gris { background: var(--pin-gris); }
+.punto-yo { background: var(--pin-yo); }
 
 /* Pantallas anchas */
 @media (min-width: 720px) {

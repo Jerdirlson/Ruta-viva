@@ -21,7 +21,8 @@ export function crearApp({ pool, claveEquipo, dirWeb }) {
       'Referrer-Policy': 'no-referrer',
       'X-Frame-Options': 'DENY',
       'Content-Security-Policy':
-        "default-src 'self'; img-src 'self' data:; object-src 'none'; base-uri 'self'; " +
+        // Las teselas del mapa vienen de OpenStreetMap; nada más se carga de afuera.
+        "default-src 'self'; img-src 'self' data: https://tile.openstreetmap.org; object-src 'none'; base-uri 'self'; " +
         "frame-ancestors 'none'; form-action 'self'"
     });
     next();

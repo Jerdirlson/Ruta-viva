@@ -111,9 +111,23 @@
   function claveDup(f) {
     return [normaliza(f.nombre), normaliza(f.direccion), normaliza(f.municipio)].join('|');
   }
+  // Mismos rangos que api/src/validar.js (validarCoordenadas) y la migración 002.
+  // Latitud y longitud van juntas o no van; null = sin ubicar.
+  function validarCoordenadas(lat, lng) {
+    const vacio = v => v == null || v === '';
+    if (vacio(lat) && vacio(lng)) return { lat: null, lng: null };
+    const a = Number(String(lat).replace(',', '.'));
+    const o = Number(String(lng).replace(',', '.'));
+    if (vacio(lat) || vacio(lng) || !Number.isFinite(a) || !Number.isFinite(o) ||
+        a < -90 || a > 90 || o < -180 || o > 180) return null;
+    return { lat: a, lng: o };
+  }
   function construirFerreteria(f, id) {
     const reg = { id: recortar('id', id) };
     CAMPOS.forEach(c => { reg[c] = recortar(c, f[c]); });
+    const c = validarCoordenadas(f.lat, f.lng) || { lat: null, lng: null };
+    reg.lat = c.lat;
+    reg.lng = c.lng;
     return reg;
   }
   function guardarFerreteria(f) {
@@ -126,6 +140,20 @@
     encolar(datos, 'ferreterias', reg);
     guardar(datos);
     return reg;
+  }
+
+  // "Guardar ubicación aquí": fija la ubicación de la ferretería con el GPS del celular.
+  function guardarUbicacion(id, lat, lng) {
+    const c = validarCoordenadas(lat, lng);
+    if (!c || c.lat == null) throw new Error('Ubicación no válida');
+    const datos = leer();
+    const f = datos.ferreterias.find(x => x.id === id);
+    if (!f) throw new Error('La ferretería no existe');
+    f.lat = c.lat;
+    f.lng = c.lng;
+    encolar(datos, 'ferreterias', f);
+    guardar(datos);
+    return f;
   }
 
   // ---------- visitas ----------
@@ -229,16 +257,20 @@
   }
 
   // ---------- CSV ----------
-  // Columnas reconocidas: id (opcional), nombre, direccion, barrio, municipio, telefono, zona.
+  // Columnas reconocidas: id (opcional), nombre, direccion, barrio, municipio, telefono, zona,
+  // y opcionalmente lat y lng (punto o coma decimal).
   // Separador ; o , (se detecta solo). Exporta con ; para que Excel en español lo abra bien.
   function celdaCSV(v) {
     const s = String(v == null ? '' : v);
     return /[";\r\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
   }
   function exportarCSV() {
-    const cabecera = ['id'].concat(CAMPOS);
+    const cabecera = ['id'].concat(CAMPOS, ['lat', 'lng']);
     const filas = [cabecera.join(';')].concat(
-      leer().ferreterias.map(f => cabecera.map(c => celdaCSV(f[c])).join(';'))
+      // Coordenadas con coma decimal, como las escribe y lee Excel en español.
+      leer().ferreterias.map(f => cabecera.map(c =>
+        celdaCSV((c === 'lat' || c === 'lng') && f[c] != null ? String(f[c]).replace('.', ',') : f[c])
+      ).join(';'))
     );
     return '﻿' + filas.join('\r\n');
   }
@@ -278,6 +310,7 @@
     const enc = filas[0].map(h => normaliza(h).replace(/ /g, '_'));
     if (!enc.includes('nombre')) throw new Error('Falta la columna "nombre"');
     const campos = CAMPOS.filter(c => enc.includes(c));
+    const conUbicacion = enc.includes('lat') && enc.includes('lng');
     const datos = leer();
     const cont = { nuevas: 0, actualizadas: 0, omitidas: 0 };
 
@@ -289,6 +322,9 @@
                         datos.ferreterias.find(x => claveDup(x) === claveDup(r));
       if (existente) {
         campos.forEach(c => { existente[c] = recortar(c, r[c]); });
+        // Una celda de ubicación vacía no borra la que ya estaba guardada.
+        const c = conUbicacion ? validarCoordenadas(r.lat, r.lng) : null;
+        if (c && c.lat != null) { existente.lat = c.lat; existente.lng = c.lng; }
         encolar(datos, 'ferreterias', existente);
         cont.actualizadas++;
       } else {
@@ -442,6 +478,7 @@
     censo: censo,
     pendientesHoy: pendientesHoy,
     guardarFerreteria: guardarFerreteria,
+    guardarUbicacion: guardarUbicacion,
     registrarVisita: registrarVisita,
     resumen: resumen,
     obtenerVendedor: obtenerVendedor,

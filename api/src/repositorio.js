@@ -33,14 +33,17 @@ export async function sincronizar(pool, lote) {
         continue;
       }
       const x = r.valor;
+      // Una ubicación guardada nunca se pierde por un envío que no la trae
+      // (por ejemplo, un celular con una versión vieja de la app): coalesce.
       await cliente.query(
-        `insert into ferreterias (id, nombre, direccion, barrio, municipio, telefono, zona)
-         values ($1, $2, $3, $4, $5, $6, $7)
+        `insert into ferreterias (id, nombre, direccion, barrio, municipio, telefono, zona, lat, lng)
+         values ($1, $2, $3, $4, $5, $6, $7, $8, $9)
          on conflict (id) do update set
            nombre = excluded.nombre, direccion = excluded.direccion, barrio = excluded.barrio,
            municipio = excluded.municipio, telefono = excluded.telefono, zona = excluded.zona,
+           lat = coalesce(excluded.lat, ferreterias.lat), lng = coalesce(excluded.lng, ferreterias.lng),
            actualizada = now()`,
-        [x.id, x.nombre, x.direccion, x.barrio, x.municipio, x.telefono, x.zona]
+        [x.id, x.nombre, x.direccion, x.barrio, x.municipio, x.telefono, x.zona, x.lat, x.lng]
       );
     }
 
@@ -80,7 +83,7 @@ export async function sincronizar(pool, lote) {
 // Estado completo, con los mismos nombres de campo que usa web/db.js.
 export async function estado(pool) {
   const f = await pool.query(
-    'select id, nombre, direccion, barrio, municipio, telefono, zona from ferreterias order by nombre, id'
+    'select id, nombre, direccion, barrio, municipio, telefono, zona, lat, lng from ferreterias order by nombre, id'
   );
   const v = await pool.query(
     `select id, ferreteria_id as "ferreteriaId", to_char(fecha, 'YYYY-MM-DD') as fecha, vendedor,

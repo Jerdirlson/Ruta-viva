@@ -10,7 +10,7 @@ const visita = (extra = {}) => Object.assign({
 
 test('ferretería válida se normaliza (recorta espacios, completa vacíos)', () => {
   const r = validarFerreteria({ id: ' f1 ', nombre: '  Ferre  ', municipio: 'Girón' });
-  assert.deepEqual(r.valor, { id: 'f1', nombre: 'Ferre', direccion: '', barrio: '', municipio: 'Girón', telefono: '', zona: '' });
+  assert.deepEqual(r.valor, { id: 'f1', nombre: 'Ferre', direccion: '', barrio: '', municipio: 'Girón', telefono: '', zona: '', lat: null, lng: null });
 });
 
 test('ferretería sin nombre o sin id se rechaza', () => {
@@ -55,4 +55,15 @@ test('config: sin base o con clave corta, el API no arranca', () => {
   assert.equal(erroresConfig(leerConfig({})).length, 2);
   assert.equal(erroresConfig(leerConfig({ DATABASE_URL: 'postgres://x', CLAVE_EQUIPO: 'corta' })).length, 1);
   assert.deepEqual(erroresConfig(leerConfig({ DATABASE_URL: 'postgres://x', CLAVE_EQUIPO: 'a'.repeat(32) })), []);
+});
+
+test('ubicación: opcional, completa y dentro de rango', async () => {
+  const { validarCoordenadas } = await import('../src/validar.js');
+  assert.deepEqual(validarCoordenadas(null, undefined).valor, { lat: null, lng: null });
+  assert.deepEqual(validarCoordenadas('7.1186', -73.1105).valor, { lat: 7.1186, lng: -73.1105 });
+  assert.match(validarCoordenadas(7.1, null).error, /incompleta/);
+  assert.match(validarCoordenadas('abc', -73).error, /incompleta/);
+  assert.match(validarCoordenadas(91, -73).error, /rango/);
+  assert.match(validarFerreteria({ id: 'f1', nombre: 'X', lat: 7.1 }).error, /incompleta/);
+  assert.equal(validarFerreteria({ id: 'f1', nombre: 'X', lat: 7.1, lng: -73.1 }).valor.lng, -73.1);
 });

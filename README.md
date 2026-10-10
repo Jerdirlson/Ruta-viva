@@ -14,6 +14,17 @@ Todo se guarda **primero en el teléfono**, así la app funciona sin señal. Cad
 
 Las visitas no se duplican aunque se reenvíen. Si dos personas editan la misma ferretería, gana la última que llega al servidor.
 
+## Mapa y ubicación
+
+- **Cerca de mí** (en Hoy): ordena las pendientes por distancia desde donde está el vendedor.
+- **Lista | Mapa**: el mapa muestra las ferreterías de la zona con pines por color: rojo pendiente, amarillo pidió visita, verde cliente, gris visitada hace poco. Al tocar un pin salen Maps, Llamar y Visitar.
+- **Ruta**: con ubicación, el botón arma la ruta con las 4 más cercanas, siempre a la más cercana desde la parada anterior, y la abre en Google Maps para navegar.
+- **Guardar ubicación aquí** (en la ficha): fija la ubicación de la ferretería con el GPS del celular. Rechaza lecturas con precisión peor que ±100 m.
+
+La posición del vendedor **solo se usa en el momento, para ordenar**: no se guarda ni se envía. Lo que se guarda es la ubicación de cada ferretería.
+
+El mapa usa [Leaflet](https://leafletjs.com) 1.9.4 (incluido en `web/vendor/leaflet/`, licencia BSD-2) con teselas de OpenStreetMap. La ubicación del celular requiere HTTPS (o `localhost`).
+
 ## Estructura
 
 | Ruta | Qué hay |
@@ -61,7 +72,7 @@ La instalación en la pantalla de inicio y el uso sin conexión requieren **HTTP
 
 ## Importar el censo (CSV)
 
-**Datos → Importar censo (CSV)**. Columnas reconocidas (sin distinguir mayúsculas ni tildes): `nombre` (obligatoria), `direccion`, `barrio`, `municipio`, `telefono`, `zona` y, opcional, `id`. El separador puede ser `;` o `,`.
+**Datos → Importar censo (CSV)**. Columnas reconocidas (sin distinguir mayúsculas ni tildes): `nombre` (obligatoria), `direccion`, `barrio`, `municipio`, `telefono`, `zona` y, opcionales, `id`, `lat` y `lng` (ubicación, con coma o punto decimal). El separador puede ser `;` o `,`.
 
 ```csv
 nombre;direccion;barrio;municipio;telefono;zona
@@ -73,7 +84,7 @@ Si una fila coincide con una existente (por `id`, o por nombre + dirección + mu
 ## Pruebas
 
 ```bash
-bash api/run-tests.sh     # 18 pruebas; levanta un Postgres desechable en Docker y lo borra al final
+bash api/run-tests.sh     # 22 pruebas; levanta un Postgres desechable en Docker y lo borra al final
 ```
 
 Cubren las reglas de validación, la sincronización, la clave del equipo, que solo se sirva `web/`, y que el rol de la app **no pueda** borrar datos ni cambiar el esquema.

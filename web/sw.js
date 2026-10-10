@@ -1,6 +1,6 @@
 /* Service worker básico: red primero, caché como respaldo sin conexión. */
 // Subir la versión al cambiar archivos de la app para que los celulares la renueven.
-const CACHE = 'socoda-v5';
+const CACHE = 'socoda-v6';
 const ARCHIVOS = [
   'index.html',
   'styles.css',
@@ -8,6 +8,8 @@ const ARCHIVOS = [
   'db.js',
   'manifest.json',
   'icon.svg',
+  'vendor/leaflet/leaflet.js',
+  'vendor/leaflet/leaflet.css',
   'data/ferreterias.json'
 ];
 

@@ -40,6 +40,19 @@ export function fechaValida(s) {
     y >= 2000 && y <= 2100;
 }
 
+// Latitud y longitud van juntas o no van. null/ausentes = sin ubicar.
+export function validarCoordenadas(lat, lng) {
+  const vacio = v => v == null || v === '';
+  if (vacio(lat) && vacio(lng)) return { valor: { lat: null, lng: null } };
+  const a = Number(lat);
+  const o = Number(lng);
+  if (vacio(lat) || vacio(lng) || !Number.isFinite(a) || !Number.isFinite(o)) {
+    return { error: 'Ubicación incompleta o no numérica' };
+  }
+  if (a < -90 || a > 90 || o < -180 || o > 180) return { error: 'Ubicación fuera de rango' };
+  return { valor: { lat: a, lng: o } };
+}
+
 export function validarFerreteria(f) {
   if (!f || typeof f !== 'object') return { error: 'Registro vacío' };
   const valor = {};
@@ -48,6 +61,9 @@ export function validarFerreteria(f) {
     if (r.error) return r;
     valor[k] = r.valor;
   }
+  const c = validarCoordenadas(f.lat, f.lng);
+  if (c.error) return c;
+  Object.assign(valor, c.valor);
   return { valor };
 }
 
