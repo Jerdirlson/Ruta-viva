@@ -273,13 +273,15 @@
       '<div class="bloque"><h3>Importar censo (CSV)</h3>' +
         '<p class="ayuda">Columnas: nombre, direccion, barrio, municipio, telefono, zona. Opcional: id. ' +
         'Separador ; o ,. Si el id, o la combinación nombre + dirección + municipio, ya existe, se actualiza.</p>' +
-        '<input type="file" id="archivo-csv" accept=".csv,text/csv"></div>' +
+        '<label class="btn btn-pri btn-ancho archivo">Elegir archivo CSV' +
+          '<input type="file" id="archivo-csv" accept=".csv,text/csv"></label></div>' +
       '<div class="bloque"><h3>Exportar</h3>' +
         '<button class="btn btn-sec btn-ancho" data-accion="csv">Descargar censo (CSV)</button>' +
         '<button class="btn btn-sec btn-ancho" data-accion="backup">Descargar respaldo completo (JSON)</button></div>' +
       '<div class="bloque"><h3>Restaurar respaldo</h3>' +
         '<p class="ayuda">Reemplaza todos los datos de este celular.</p>' +
-        '<input type="file" id="archivo-backup" accept=".json,application/json"></div>';
+        '<label class="btn btn-ancho archivo">Elegir respaldo (JSON)' +
+          '<input type="file" id="archivo-backup" accept=".json,application/json"></label></div>';
   }
 
   // ---------- render ----------
