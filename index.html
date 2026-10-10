@@ -1,0 +1,113 @@
+<!doctype html>
+<html lang="es-CO">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#0a3d7a">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-title" content="SOCODA">
+  <title>SOCODA Censo</title>
+  <link rel="manifest" href="manifest.json">
+  <link rel="icon" href="icon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <header class="barra">
+    <strong>SOCODA</strong>
+    <span>Censo de ferreterías</span>
+  </header>
+
+  <main id="vista"></main>
+
+  <nav class="nav" aria-label="Principal">
+    <button data-ir="hoy" data-nav>Hoy</button>
+    <button data-ir="censo" data-nav>Censo</button>
+    <button data-ir="resumen" data-nav>Resumen</button>
+    <button data-ir="datos" data-nav>Datos</button>
+  </nav>
+
+  <div id="toast" class="toast" role="status" aria-live="polite"></div>
+
+  <dialog id="dlg-visita">
+    <form id="form-visita" class="form">
+      <header class="dlg-cab">
+        <h2>Registrar visita</h2>
+        <p id="dlg-visita-nombre"></p>
+      </header>
+
+      <label class="campo">Fecha
+        <input type="date" name="fecha" required>
+      </label>
+
+      <fieldset class="campo">
+        <legend>Resultado</legend>
+        <div class="opciones">
+          <label class="op"><input type="radio" name="resultado" value="compro" required><span>Compró</span></label>
+          <label class="op"><input type="radio" name="resultado" value="no_compro"><span>No compró</span></label>
+          <label class="op"><input type="radio" name="resultado" value="no_estaba"><span>No estaba</span></label>
+          <label class="op"><input type="radio" name="resultado" value="pidio_visita"><span>Pidió visita después</span></label>
+        </div>
+      </fieldset>
+
+      <fieldset class="campo">
+        <legend>Líneas que vende</legend>
+        <div class="opciones">
+          <label class="op"><input type="checkbox" name="lineas" value="lavaplatos"><span>Lavaplatos</span></label>
+          <label class="op"><input type="checkbox" name="lineas" value="cocina_integral"><span>Cocina integral</span></label>
+          <label class="op"><input type="checkbox" name="lineas" value="estufa"><span>Estufa</span></label>
+          <label class="op"><input type="checkbox" name="lineas" value="campana"><span>Campana</span></label>
+          <label class="op"><input type="checkbox" name="lineas" value="meson"><span>Mesón</span></label>
+        </div>
+      </fieldset>
+
+      <label class="campo">Marca de competencia
+        <input name="competencia" list="lista-marcas" maxlength="80" placeholder="Ej: nombre de la marca">
+      </label>
+
+      <label class="campo">Notas
+        <textarea name="notas" rows="3" maxlength="500"></textarea>
+      </label>
+
+      <div class="acciones">
+        <button type="button" class="btn btn-sec" data-cerrar>Cancelar</button>
+        <button class="btn btn-pri">Guardar</button>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog id="dlg-nueva">
+    <form id="form-nueva" class="form">
+      <header class="dlg-cab"><h2>Nueva ferretería</h2></header>
+      <label class="campo">Nombre *
+        <input name="nombre" required maxlength="120">
+      </label>
+      <label class="campo">Dirección
+        <input name="direccion" maxlength="160">
+      </label>
+      <label class="campo">Barrio
+        <input name="barrio" maxlength="80">
+      </label>
+      <label class="campo">Municipio
+        <input name="municipio" list="lista-municipios" maxlength="60">
+      </label>
+      <label class="campo">Teléfono
+        <input name="telefono" type="tel" maxlength="30">
+      </label>
+      <label class="campo">Zona
+        <input name="zona" list="lista-zonas" maxlength="40">
+      </label>
+      <div class="acciones">
+        <button type="button" class="btn btn-sec" data-cerrar>Cancelar</button>
+        <button class="btn btn-pri">Guardar</button>
+      </div>
+    </form>
+  </dialog>
+
+  <datalist id="lista-marcas"></datalist>
+  <datalist id="lista-municipios"></datalist>
+  <datalist id="lista-zonas"></datalist>
+
+  <script src="db.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>

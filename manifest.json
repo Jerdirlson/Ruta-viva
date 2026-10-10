@@ -1,0 +1,15 @@
+{
+  "name": "SOCODA Censo de ferreterías",
+  "short_name": "SOCODA",
+  "description": "Censo, rutas y seguimiento de visitas a ferreterías para vendedores SOCODA.",
+  "lang": "es-CO",
+  "start_url": "./index.html",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#ffffff",
+  "theme_color": "#0a3d7a",
+  "icons": [
+    { "src": "icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" }
+  ]
+}
