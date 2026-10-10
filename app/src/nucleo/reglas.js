@@ -317,10 +317,12 @@ export function pendientesDe(censo) {
 }
 
 // Color del pin según lo que el vendedor tiene que hacer.
+// Como dice la leyenda: el color es el estado. Un cliente es verde aunque lleve tiempo sin
+// visita (antes salía rojo: los clientes del censo, sin visitas en la app, se veían pendientes).
 export function colorPin(f) {
   if (f.estado === 'seguimiento') return 'amarillo';
-  if (f.diasSinVisita > DIAS_SIN_VISITA) return 'rojo';
   if (f.estado === 'cliente') return 'verde';
+  if (f.diasSinVisita > DIAS_SIN_VISITA) return 'rojo';
   return 'gris';
 }
 

@@ -42,7 +42,9 @@ test('color del pin', () => {
   assert.equal(R.colorPin({ estado: 'nueva', diasSinVisita: Infinity }), 'rojo');
   assert.equal(R.colorPin({ estado: 'cliente', diasSinVisita: 3 }), 'verde');
   assert.equal(R.colorPin({ estado: 'visitada', diasSinVisita: 3 }), 'gris');
-  assert.equal(R.colorPin({ estado: 'cliente', diasSinVisita: 31 }), 'rojo');
+  assert.equal(R.colorPin({ estado: 'cliente', diasSinVisita: 31 }), 'verde');
+  assert.equal(R.colorPin({ estado: 'cliente', diasSinVisita: Infinity }), 'verde');   // cliente del censo sin visitas en la app
+  assert.equal(R.colorPin({ estado: 'visitada', diasSinVisita: 31 }), 'rojo');
 });
 
 test('visita: valida resultado, ferretería y recorta textos a los límites', () => {
