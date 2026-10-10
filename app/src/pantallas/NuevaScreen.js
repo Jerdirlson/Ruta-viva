@@ -3,7 +3,7 @@ import React, { useLayoutEffect, useMemo, useState } from 'react';
 import { KeyboardAvoidingView, Platform, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { color, letra, radio, TOQUE } from '../tema';
-import { CATEGORIAS, LIMITES, TIPOS, unicos } from '../nucleo/reglas';
+import { CATEGORIAS, COCINAS, EXHIBIDORES, LIMITES, MARCAS, PROVEEDORES, TIPOS, unicos } from '../nucleo/reglas';
 import { useApp } from '../estado/AppContext';
 import { Boton, Opcion } from '../componentes/ui';
 
@@ -23,7 +23,8 @@ const CONTACTO = [
 
 // Lo que se edita en el formulario; el resto (Google, ubicación) se conserva al guardar.
 const EDITABLES = CAMPOS.concat(CONTACTO).map(c => c[0])
-  .concat(['tipo', 'categoria', 'clienteSocoda', 'vendedorAsignado']);
+  .concat(['tipo', 'categoria', 'clienteSocoda', 'vendedorAsignado', 'marcas', 'otrasMarcas', 'exhibidor', 'cocinas',
+    'refCocinas', 'proveedores', 'otrosProveedores', 'observaciones']);
 
 export default function NuevaScreen({ route, navigation }) {
   const { censo, datos, guardarFerreteria, avisar } = useApp();
@@ -31,12 +32,24 @@ export default function NuevaScreen({ route, navigation }) {
   const id = route.params && route.params.id;
   const existente = id ? censo.find(x => x.id === id) : null;
   const [f, setF] = useState(() => {
-    if (!existente) return { tipo: 'ferreteria', clienteSocoda: false };
+    if (!existente) return { tipo: 'ferreteria', clienteSocoda: false, marcas: [], proveedores: [] };
     const ini = {};
     EDITABLES.forEach(k => { ini[k] = existente[k]; });
     return ini;
   });
   const fijar = (k, v) => setF(x => ({ ...x, [k]: v }));
+  const alternar = (k, v) => setF(x => {
+    const l = x[k] || [];
+    return { ...x, [k]: l.includes(v) ? l.filter(y => y !== v) : l.concat(v) };
+  });
+  const opciones = (k, valores, multiple) => (
+    <View style={s.opciones}>
+      {Object.entries(valores).map(([v, t]) => (
+        <Opcion key={v} chica titulo={t} activa={multiple ? (f[k] || []).includes(v) : f[k] === v}
+          onPress={() => (multiple ? alternar(k, v) : fijar(k, f[k] === v ? '' : v))} testID={'nueva-' + k + '-' + v} />
+      ))}
+    </View>
+  );
 
   useLayoutEffect(() => {
     if (existente) navigation.setOptions({ title: 'Editar ferretería' });
@@ -116,6 +129,30 @@ export default function NuevaScreen({ route, navigation }) {
           </View>
         </View>
         {campo(['vendedorAsignado', 'Vendedor asignado', 'default'])}
+
+        <Text style={s.subtitulo}>Marcas y exhibición</Text>
+        <Text style={s.etiqueta}>Marcas que tiene</Text>
+        {opciones('marcas', MARCAS, true)}
+        {campo(['otrasMarcas', 'Otras marcas', 'default'])}
+        <Text style={s.etiqueta}>Exhibidor SOCODA</Text>
+        {opciones('exhibidor', EXHIBIDORES, false)}
+        <Text style={s.etiqueta}>¿Vende cocinas integrales?</Text>
+        {opciones('cocinas', COCINAS, false)}
+        {f.cocinas === 'si' ? (
+          <View style={{ gap: 6 }}>
+            <Text style={s.etiqueta}>Referencias de cocinas</Text>
+            <TextInput value={f.refCocinas == null ? '' : String(f.refCocinas)} onChangeText={v => fijar('refCocinas', v.replace(/\D/g, ''))}
+              keyboardType="number-pad" maxLength={4} style={s.campo} testID="nueva-refCocinas" />
+          </View>
+        ) : null}
+        <Text style={s.etiqueta}>Proveedor (por dónde le llega SOCODA)</Text>
+        {opciones('proveedores', PROVEEDORES, true)}
+        {campo(['otrosProveedores', 'Otro proveedor', 'default'])}
+        <View style={{ gap: 6 }}>
+          <Text style={s.etiqueta}>Observaciones</Text>
+          <TextInput value={f.observaciones || ''} onChangeText={v => fijar('observaciones', v)} maxLength={LIMITES.observaciones} multiline
+            style={[s.campo, { minHeight: 80, textAlignVertical: 'top', paddingTop: 10 }]} testID="nueva-observaciones" />
+        </View>
 
         {!existente ? (
           <Text style={s.ayuda}>Cuando estés en la ferretería, abre su ficha y toca "Guardar ubicación aquí".</Text>

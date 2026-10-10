@@ -21,7 +21,10 @@ export const LIMITES = {
   vendedorAsignado: 60,
   googlePlaceId: 255,
   web: 300,
-  horario: 600
+  horario: 600,
+  otrasMarcas: 120,
+  otrosProveedores: 120,
+  observaciones: 500
 };
 
 export const RESULTADOS = ['compro', 'no_compro', 'no_estaba', 'pidio_visita'];
@@ -30,10 +33,25 @@ export const TIPOS = ['ferreteria', 'materiales'];
 export const CATEGORIAS = ['', 'A', 'B', 'C'];
 // Migración 004: '' = activa; si no, el motivo por el que se descartó.
 export const DESCARTES = ['', 'no_existe', 'cerro', 'no_aplica'];
+// Migración 006: presencia de marcas y datos comerciales (lista fija por ahora).
+export const MARCAS = ['socoda', 'north', 'atlantis', 'guinovart', 'aquaviva', 'mundial', 'gricol', 'fermetal', 'tramontina'];
+export const PROVEEDORES = ['chp', 'corbeta', 'ferredistarco', 'meico', 'ardisa', 'copricol', 'construcciones', 'socoda'];
+export const EXHIBIDORES = ['', 'no', 'nuevo', 'antiguo'];
+export const COCINAS = ['', 'si', 'no'];
 
 // Campos de la migración 003. Opcionales: si no vienen (null), el servidor conserva
 // lo guardado, para que un celular con una versión vieja de la app no los borre.
-export const TEXTOS_EXTRA = ['encargado', 'whatsapp', 'correo', 'vendedorAsignado', 'googlePlaceId', 'web', 'horario'];
+export const TEXTOS_EXTRA = ['encargado', 'whatsapp', 'correo', 'vendedorAsignado', 'googlePlaceId', 'web', 'horario',
+  'otrasMarcas', 'otrosProveedores', 'observaciones'];
+
+// Lista de valores permitidos, sin repetir. null = no vino (se conserva lo guardado).
+function lista(v, permitidos, nombre) {
+  if (v === undefined || v === null) return { valor: null };
+  if (!Array.isArray(v)) return { error: nombre + ' no válidas' };
+  const u = [...new Set(v)];
+  if (u.some(x => !permitidos.includes(x))) return { error: nombre + ' no válidas' };
+  return { valor: u };
+}
 
 function texto(v) {
   if (v == null) return '';
@@ -112,6 +130,20 @@ function validarExtras(f) {
   if (valor.descartadaFecha !== null && valor.descartadaFecha !== '' && !fechaValida(valor.descartadaFecha)) {
     return { error: 'Fecha de descarte no válida' };
   }
+  const m = lista(f.marcas, MARCAS, 'Marcas');
+  if (m.error) return m;
+  valor.marcas = m.valor;
+  const p = lista(f.proveedores, PROVEEDORES, 'Proveedores');
+  if (p.error) return p;
+  valor.proveedores = p.valor;
+  valor.exhibidor = falta(f.exhibidor) ? null : f.exhibidor;
+  if (valor.exhibidor !== null && !EXHIBIDORES.includes(valor.exhibidor)) return { error: 'Exhibidor no válido' };
+  valor.cocinas = falta(f.cocinas) ? null : f.cocinas;
+  if (valor.cocinas !== null && !COCINAS.includes(valor.cocinas)) return { error: 'Cocinas no válido' };
+  valor.refCocinas = falta(f.refCocinas) ? null : Number(f.refCocinas);
+  if (valor.refCocinas !== null && !(Number.isInteger(valor.refCocinas) && valor.refCocinas >= 0 && valor.refCocinas <= 1000)) {
+    return { error: 'Referencias de cocinas no válidas' };
+  }
   valor.calificacion = falta(f.calificacion) ? null : Number(f.calificacion);
   if (valor.calificacion !== null && !(valor.calificacion >= 0 && valor.calificacion <= 5)) {
     return { error: 'Calificación fuera de rango' };
@@ -145,6 +177,11 @@ export function validarVisita(v) {
   const lineas = Array.isArray(v.lineas) ? [...new Set(v.lineas)] : [];
   if (lineas.some(l => !LINEAS.includes(l))) return { error: 'Línea no válida' };
   valor.lineas = lineas;
+  const m = lista(v.marcas, MARCAS, 'Marcas');
+  if (m.error) return m;
+  valor.marcas = m.valor;
+  valor.exhibidor = v.exhibidor === undefined || v.exhibidor === null || v.exhibidor === '' ? null : v.exhibidor;
+  if (valor.exhibidor !== null && !EXHIBIDORES.includes(valor.exhibidor)) return { error: 'Exhibidor no válido' };
   const creada = Date.parse(v.creada);
   valor.creada = new Date(Number.isNaN(creada) ? Date.now() : creada).toISOString();
   return { valor };

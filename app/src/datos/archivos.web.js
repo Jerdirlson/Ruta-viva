@@ -9,6 +9,10 @@ export async function elegirArchivoTexto(tipos) {
   return (await fetch(a.uri)).text();
 }
 
+export async function compartirBytes(nombre, bytes, mime) {
+  return compartirTexto(nombre, bytes, mime);
+}
+
 export async function compartirTexto(nombre, texto, mime) {
   const url = URL.createObjectURL(new Blob([texto], { type: mime }));
   const enlace = document.createElement('a');

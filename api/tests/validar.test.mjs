@@ -15,7 +15,9 @@ test('ferretería válida se normaliza (recorta espacios, completa vacíos)', ()
     // Campos de la migración 003 que no vinieron: null = el servidor conserva lo guardado.
     encargado: null, whatsapp: null, correo: null, vendedorAsignado: null, googlePlaceId: null, web: null, horario: null,
     tipo: null, categoria: null, clienteSocoda: null, calificacion: null, resenas: null,
-    descartada: null, descartadaPor: null, descartadaFecha: null
+    descartada: null, descartadaPor: null, descartadaFecha: null,
+    otrasMarcas: null, otrosProveedores: null, observaciones: null,
+    marcas: null, proveedores: null, exhibidor: null, cocinas: null, refCocinas: null
   });
 });
 
@@ -108,4 +110,21 @@ test('usuarios: formato del usuario, rol y contraseña (temporal corta, propia d
   assert.ok(validarClave('12345678', false).valor);
   assert.ok(validarClave('1234', true).valor);
   assert.match(validarClave('123', true).error, /4/);
+});
+
+test('marcas y comercial: listas de valores fijos, exhibidor, cocinas y referencias', () => {
+  const base = { id: 'f1', nombre: 'Ferre' };
+  const ok = validarFerreteria(Object.assign({}, base, {
+    marcas: ['socoda', 'north', 'socoda'], proveedores: ['chp', 'corbeta'], exhibidor: 'antiguo', cocinas: 'si', refCocinas: '3', observaciones: ' territorio rojo '
+  })).valor;
+  assert.deepEqual([ok.marcas, ok.proveedores, ok.exhibidor, ok.cocinas, ok.refCocinas, ok.observaciones],
+    [['socoda', 'north'], ['chp', 'corbeta'], 'antiguo', 'si', 3, 'territorio rojo']);
+  assert.match(validarFerreteria(Object.assign({}, base, { marcas: ['haceb'] })).error, /Marcas/);
+  assert.match(validarFerreteria(Object.assign({}, base, { marcas: 'socoda' })).error, /Marcas/);
+  assert.match(validarFerreteria(Object.assign({}, base, { proveedores: ['otro'] })).error, /Proveedores/);
+  assert.match(validarFerreteria(Object.assign({}, base, { exhibidor: 'si' })).error, /Exhibidor/);
+  assert.match(validarFerreteria(Object.assign({}, base, { refCocinas: -1 })).error, /cocinas/);
+  const vis = validarVisita(visita({ marcas: ['socoda'], exhibidor: 'nuevo' })).valor;
+  assert.deepEqual([vis.marcas, vis.exhibidor], [['socoda'], 'nuevo']);
+  assert.deepEqual([validarVisita(visita()).valor.marcas, validarVisita(visita()).valor.exhibidor], [null, null]);
 });

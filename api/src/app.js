@@ -7,6 +7,7 @@ import { sincronizar, ErrorCliente } from './repositorio.js';
 import { ingresar, sesionDe, cerrarSesion, cambiarClave, listarUsuarios, crearUsuario, actualizarUsuario } from './usuarios.js';
 import { crearLimitador } from './auth.js';
 import { normalizarUsuario } from './validar.js';
+import { libroDelCenso } from './exportar.js';
 
 function tokenDe(req) {
   const m = /^Bearer\s+(\S+)$/i.exec(req.get('Authorization') || '');
@@ -112,6 +113,19 @@ export function crearApp({ pool, dirWeb, limitador = crearLimitador() }) {
   });
   app.patch('/api/usuarios/:id', autenticar, claveAlDia, soloAdmin, express.json({ limit: '10kb' }), async (req, res) => {
     res.json({ usuario: await actualizarUsuario(pool, req.params.id, req.body || {}, req.usuario) });
+  });
+
+  // Censo en Excel con el formato de SOCODA (solo admin: trae datos personales de encargados).
+  app.get('/api/exportar/censo.xlsx', autenticar, claveAlDia, soloAdmin, async (req, res) => {
+    const libro = await libroDelCenso(pool);
+    const hoy = new Date().toISOString().slice(0, 10);
+    res.set({
+      'Content-Type': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      'Content-Disposition': `attachment; filename="censo_ferreterias_socoda_${hoy}.xlsx"`,
+      'Cache-Control': 'no-store'
+    });
+    await libro.xlsx.write(res);
+    res.end();
   });
 
   app.use('/api', (req, res) => res.status(404).json({ error: 'No existe' }));

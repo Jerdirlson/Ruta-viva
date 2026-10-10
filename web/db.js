@@ -16,7 +16,8 @@
   const DIAS_SIN_VISITA = 30;
   const CAMPOS = ['nombre', 'direccion', 'barrio', 'municipio', 'telefono', 'zona'];
   // Migración 003: contacto, comercial y Google Maps. Los de texto se recortan con LIMITES.
-  const TEXTOS_EXTRA = ['encargado', 'whatsapp', 'correo', 'vendedorAsignado', 'googlePlaceId', 'web', 'horario'];
+  const TEXTOS_EXTRA = ['encargado', 'whatsapp', 'correo', 'vendedorAsignado', 'googlePlaceId', 'web', 'horario',
+    'otrasMarcas', 'otrosProveedores', 'observaciones'];
 
   // Mismos límites que api/src/validar.js, api/migrations/*.sql y app/src/nucleo/reglas.js.
   // Si se cambia uno, se cambian todos.
@@ -37,7 +38,10 @@
     vendedorAsignado: 60,
     googlePlaceId: 255,
     web: 300,
-    horario: 600
+    horario: 600,
+    otrasMarcas: 120,
+    otrosProveedores: 120,
+    observaciones: 500,
   };
 
   const TIPOS = {
@@ -45,6 +49,32 @@
     materiales: 'Materiales de construcción'
   };
   const CATEGORIAS = ['A', 'B', 'C'];
+
+  // Migración 006: presencia de marcas y datos comerciales (lista fija por ahora).
+  // Mismos valores de api/src/validar.js y de la migración.
+  const MARCAS = {
+    socoda: 'SOCODA',
+    north: 'North',
+    atlantis: 'Atlantis',
+    guinovart: 'Guinovart',
+    aquaviva: 'Aquaviva',
+    mundial: 'Mundial',
+    gricol: 'Gricol',
+    fermetal: 'Fermetal',
+    tramontina: 'Tramontina'
+  };
+  const PROVEEDORES = {
+    chp: 'CHP',
+    corbeta: 'Corbeta',
+    ferredistarco: 'Ferredistarco',
+    meico: 'Meico',
+    ardisa: 'Ardisa',
+    copricol: 'Copricol',
+    construcciones: 'Construcciones',
+    socoda: 'SOCODA directo'
+  };
+  const EXHIBIDORES = { no: 'No tiene', nuevo: 'Sí, nuevo', antiguo: 'Sí, antiguo' };
+  const COCINAS = { si: 'Sí', no: 'No' };
 
   // Migración 004: por qué se descartó una ferretería ('' = activa). No se borra nunca.
   const DESCARTES = {
@@ -169,6 +199,13 @@
     reg.clienteSocoda = siNo(f.clienteSocoda);
     reg.calificacion = numeroEntre(f.calificacion, 0, 5, false);
     reg.resenas = numeroEntre(f.resenas, 0, 1e8, true);
+    const listaDe = (v, permitidos) => [...new Set((Array.isArray(v) ? v : String(v || '').split(/[|,;]/))
+      .map(x => limpiar(x).toLowerCase()).filter(x => tiene(permitidos, x)))];
+    reg.marcas = listaDe(f.marcas, MARCAS);
+    reg.proveedores = listaDe(f.proveedores, PROVEEDORES);
+    reg.exhibidor = tiene(EXHIBIDORES, f.exhibidor) ? f.exhibidor : '';
+    reg.cocinas = tiene(COCINAS, f.cocinas) ? f.cocinas : '';
+    reg.refCocinas = numeroEntre(f.refCocinas, 0, 1000, true);
     reg.descartada = tiene(DESCARTES, f.descartada) ? f.descartada : '';
     reg.descartadaPor = recortar('vendedor', f.descartadaPor);
     reg.descartadaFecha = /^\d{4}-\d{2}-\d{2}$/.test(limpiar(f.descartadaFecha)) ? limpiar(f.descartadaFecha) : '';
@@ -343,6 +380,9 @@
     ['categoria', 'categoria'], ['cliente_socoda', 'clienteSocoda'], ['vendedor_asignado', 'vendedorAsignado'],
     ['google_place_id', 'googlePlaceId'], ['web', 'web'], ['horario', 'horario'],
     ['calificacion', 'calificacion'], ['resenas', 'resenas'],
+    ['marcas', 'marcas'], ['otras_marcas', 'otrasMarcas'], ['exhibidor', 'exhibidor'], ['cocinas', 'cocinas'],
+    ['ref_cocinas', 'refCocinas'], ['proveedores', 'proveedores'], ['otros_proveedores', 'otrosProveedores'],
+    ['observaciones', 'observaciones'],
     ['descartada', 'descartada'], ['descartada_por', 'descartadaPor'], ['descartada_fecha', 'descartadaFecha']
   ];
   const COLUMNAS = CAMPOS.map(c => [c, c]).concat(COLUMNAS_EXTRA);
@@ -350,6 +390,7 @@
   function textoCelda(k, v) {
     if (v == null) return '';
     if (k === 'clienteSocoda') return v ? 'si' : 'no';
+    if (Array.isArray(v)) return v.join('|');
     if (k === 'lat' || k === 'lng' || k === 'calificacion') return String(v).replace('.', ',');
     return v;
   }
@@ -412,7 +453,8 @@
                         datos.ferreterias.find(x => claveDup(x) === claveDup(r));
       if (existente) {
         const cambios = {};
-        presentes.forEach(([col, k]) => { cambios[k] = r[col]; });
+        // Una celda vacía no borra lo guardado (como la ubicación).
+        presentes.forEach(([col, k]) => { if (r[col] !== '') cambios[k] = r[col]; });
         // Una celda de ubicación vacía no borra la que ya estaba guardada.
         const c = conUbicacion ? validarCoordenadas(r.lat, r.lng) : null;
         const ubic = c && c.lat != null ? c : { lat: existente.lat, lng: existente.lng };
@@ -529,6 +571,18 @@
     const j = await llamar('api/clave', { actual: actual, nueva: nueva });
     fijarSesion({ token: sesion().token, usuario: j.usuario });
   }
+  // Censo en Excel (solo admin): descarga el archivo que arma el servidor.
+  async function descargarExcel() {
+    let res;
+    try {
+      res = await fetch('api/exportar/censo.xlsx', { cache: 'no-store', headers: cabeceras() });
+    } catch (e) {
+      throw new Error('Sin conexión con el servidor. Revisa la señal e intenta de nuevo.');
+    }
+    if (res.status === 401) olvidarSesion();
+    if (!res.ok) throw new Error(((await res.json().catch(() => ({}))).error) || 'No se pudo generar el Excel');
+    return res.blob();
+  }
   async function salir() {
     if (sesion()) await llamar('api/salir', {}).catch(() => {});
     olvidarSesion();
@@ -628,6 +682,9 @@
     TIPOS: TIPOS,
     CATEGORIAS: CATEGORIAS,
     DESCARTES: DESCARTES,
+    MARCAS: MARCAS,
+    PROVEEDORES: PROVEEDORES,
+    EXHIBIDORES: EXHIBIDORES,
     descartarFerreteria: descartarFerreteria,
     reactivarFerreteria: reactivarFerreteria,
     LIMITES: LIMITES,
@@ -651,6 +708,7 @@
     ingresar: ingresar,
     cambiarClave: cambiarClave,
     salir: salir,
+    descargarExcel: descargarExcel,
     estadoSync: estadoSync,
     sincronizar: sincronizar,
     cargarSemillaSiVacio: cargarSemillaSiVacio

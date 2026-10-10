@@ -5,7 +5,7 @@ import { color, letra, radio, TOQUE } from '../tema';
 import { hoyISO, LIMITES } from '../nucleo/reglas';
 import { useApp, API_URL } from '../estado/AppContext';
 import { Boton } from '../componentes/ui';
-import { elegirArchivoTexto, compartirTexto } from '../datos/archivos';
+import { elegirArchivoTexto, compartirTexto, compartirBytes } from '../datos/archivos';
 import { textoEstadoSync } from '../componentes/EstadoSync';
 
 function Bloque({ titulo, children }) {
@@ -41,6 +41,17 @@ export default function DatosScreen({ navigation }) {
     if (texto == null) return;
     const r = app.importarCSV(texto);
     avisar('Listo: ' + r.nuevas + ' nuevas, ' + r.actualizadas + ' actualizadas, ' + r.omitidas + ' omitidas');
+  });
+  const [generando, setGenerando] = useState(false);
+  const excel = conError(async () => {
+    setGenerando(true);
+    try {
+      const bytes = await app.descargarExcel();
+      await compartirBytes('censo_ferreterias_socoda_' + hoyISO() + '.xlsx', bytes,
+        'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+    } finally {
+      setGenerando(false);
+    }
   });
   const exportar = conError(() => compartirTexto('censo_socoda_' + hoyISO() + '.csv', app.exportarCSV(), 'text/csv'));
   const respaldar = conError(() => compartirTexto('respaldo_rutaviva_' + hoyISO() + '.json', app.respaldo(), 'application/json'));
@@ -107,6 +118,16 @@ export default function DatosScreen({ navigation }) {
         </Text>
         <Boton titulo="Elegir archivo CSV" tipo="pri" onPress={importar} testID="importar" />
       </Bloque>
+
+      {modo === 'servidor' && sesion && sesion.usuario.rol === 'admin' ? (
+        <Bloque titulo="Censo en Excel">
+          <Text style={s.ayuda}>
+            Con el formato del consolidado de ferreterías (marcas, exhibidor, cocinas, proveedor, observaciones) y las hojas de
+            resumen por marca y por ciudad, con lo último del servidor.
+          </Text>
+          <Boton titulo={generando ? 'Generando…' : 'Descargar censo en Excel'} tipo="pri" deshabilitado={generando} onPress={excel} testID="excel" />
+        </Bloque>
+      ) : null}
 
       <Bloque titulo="Exportar">
         <Boton titulo="Compartir censo (CSV)" onPress={exportar} />

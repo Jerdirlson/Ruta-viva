@@ -10,6 +10,15 @@ export async function elegirArchivoTexto(tipos) {
   return new File(r.assets[0].uri).text();
 }
 
+// Archivo binario (el Excel del censo): se guarda en caché y se comparte.
+export async function compartirBytes(nombre, bytes, mime) {
+  const archivo = new File(Paths.cache, nombre);
+  archivo.create({ overwrite: true });
+  archivo.write(bytes);
+  if (!(await Sharing.isAvailableAsync())) throw new Error('Este celular no permite compartir archivos.');
+  await Sharing.shareAsync(archivo.uri, { mimeType: mime, dialogTitle: nombre });
+}
+
 export async function compartirTexto(nombre, texto, mime) {
   const archivo = new File(Paths.cache, nombre);
   archivo.create({ overwrite: true });

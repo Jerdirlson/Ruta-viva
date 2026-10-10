@@ -372,3 +372,45 @@ test('sync por cambios: con "desde" solo devuelve lo cambiado después (con un s
   assert.ok(otra.ferreterias.some(f => f.id === 'd9'));
   assert.equal((await (await sync({ desde: 'basura' })).json()).completo, true);
 });
+
+test('marcas y comercial: se guardan, un envío sin ellas no las borra y la visita guarda lo visto', { skip: omitir }, async () => {
+  const datos = { marcas: ['socoda', 'atlantis'], otrasMarcas: 'Haceb', exhibidor: 'antiguo', cocinas: 'si', refCocinas: 4,
+    proveedores: ['chp', 'ferredistarco'], otrosProveedores: '', observaciones: 'Territorio rojo' };
+  let f = (await (await sync({ ferreterias: [ferre('m1', datos)] })).json()).ferreterias.find(x => x.id === 'm1');
+  for (const [k, v] of Object.entries(datos)) assert.deepEqual(f[k], v, k);
+  f = (await (await sync({ ferreterias: [ferre('m1', { telefono: '300' })] })).json()).ferreterias.find(x => x.id === 'm1');
+  assert.deepEqual([f.marcas, f.exhibidor, f.proveedores], [['socoda', 'atlantis'], 'antiguo', ['chp', 'ferredistarco']]);
+  f = (await (await sync({ ferreterias: [ferre('m1', { marcas: [], proveedores: [] })] })).json()).ferreterias.find(x => x.id === 'm1');
+  assert.deepEqual([f.marcas, f.proveedores], [[], []]);
+  const j = await (await sync({ visitas: [visita('vm1', 'm1', { marcas: ['socoda'], exhibidor: 'nuevo' }), visita('vm2', 'm1')] })).json();
+  const v1 = j.visitas.find(v => v.id === 'vm1');
+  const v2 = j.visitas.find(v => v.id === 'vm2');
+  assert.deepEqual([v1.marcas, v1.exhibidor, v2.marcas, v2.exhibidor], [['socoda'], 'nuevo', null, null]);
+});
+
+test('exportar el censo en Excel: solo admin, formato de SOCODA y hojas de resumen', { skip: omitir }, async () => {
+  const ExcelJS = (await import('exceljs')).default;
+  const { LISTAS } = await import('../src/exportar.js');
+  assert.deepEqual([...LISTAS.MARCAS_EXCEL].sort(), [...LISTAS.MARCAS].sort());
+  assert.deepEqual(Object.keys(LISTAS.NOMBRE_PROVEEDOR).sort(), [...LISTAS.PROVEEDORES].sort());
+  await sync({ ferreterias: [ferre('xl1', { nombre: 'Ferretería Excel', marcas: ['socoda', 'north'], exhibidor: 'antiguo', proveedores: ['chp', 'corbeta'],
+    encargado: 'Don Pedro', observaciones: 'Territorio rojo' })] });
+  assert.equal((await pedir('/api/exportar/censo.xlsx', undefined, TOKEN_LUIS, 'GET')).status, 403);
+  const r = await pedir('/api/exportar/censo.xlsx', undefined, TOKEN, 'GET');
+  assert.equal(r.status, 200);
+  assert.match(r.headers.get('content-disposition'), /censo_ferreterias_socoda_\d{4}-\d{2}-\d{2}\.xlsx/);
+  const libro = new ExcelJS.Workbook();
+  await libro.xlsx.load(Buffer.from(await r.arrayBuffer()));
+  assert.deepEqual(libro.worksheets.map(w => w.name), ['CONSOLIDADO FERRETERIAS', ' % FERRETERIAS SEGUN MARCA', 'PRESENCIA  SEGUN CIUDAD']);
+  const h = libro.getWorksheet('CONSOLIDADO FERRETERIAS');
+  const cab = h.getRow(1).values.slice(1);
+  assert.deepEqual(cab.slice(1, 8), ['NOMBRE CLIENTE', 'DIRECCION', 'BARRIO', 'SECTOR', 'TELEFONO', 'SOCODA', 'GUINOVART']);
+  const fila = h.getRows(3, h.rowCount - 2).find(x => x.getCell(2).value === 'Ferretería Excel').values.slice(1);
+  const col = n => fila[cab.indexOf(n)];
+  assert.deepEqual([col('SOCODA'), col('NORTH'), col('ATLANTIS'), col('EXHIBIDOR SI O NO'), col('ATENDIDO POR'), col('PROVEEDOR')],
+    [1, 1, 0, 1, 'Don Pedro', 'CHP Y CORBETA']);
+  assert.match(col('OBSERVACIONES'), /EXHIBIDOR ANTIGUO.*Territorio rojo/);
+  const pct = libro.getWorksheet(' % FERRETERIAS SEGUN MARCA').getRow(2).values.slice(1);
+  assert.equal(pct[0], 'SOCODA');
+  assert.ok(pct[2] >= 1);
+});

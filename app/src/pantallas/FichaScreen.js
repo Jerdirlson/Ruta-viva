@@ -2,7 +2,7 @@
 import React, { useState } from 'react';
 import { ScrollView, StyleSheet, Text, View } from 'react-native';
 import { color, letra, radio } from '../tema';
-import { DESCARTES, LINEAS, RESULTADOS, TIPOS } from '../nucleo/reglas';
+import { COCINAS, DESCARTES, EXHIBIDORES, LINEAS, MARCAS, PROVEEDORES, RESULTADOS, TIPOS } from '../nucleo/reglas';
 import { distanciaA, textoDistancia, urlMaps, urlWhatsapp, telefonoMarcable } from '../nucleo/geo';
 import { useApp } from '../estado/AppContext';
 import { Boton, ChipEstado, Opcion, abrir } from '../componentes/ui';
@@ -61,6 +61,19 @@ export default function FichaScreen({ route, navigation }) {
         <Dato titulo="WhatsApp" valor={f.whatsapp} />
         {f.correo ? <Dato titulo="Correo" valor={f.correo} /> : null}
         <Dato titulo="Cliente de SOCODA" valor={f.clienteSocoda ? 'Sí' : 'No'} />
+        <View style={s.dato}>
+          <Text style={s.datoTitulo}>Marcas que tiene</Text>
+          {f.marcas && f.marcas.length ? (
+            <View style={s.chips}>
+              {f.marcas.map(m => <Text key={m} style={[s.etiqueta, m === 'socoda' && s.etiquetaSocoda]}>{MARCAS[m] || m}</Text>)}
+            </View>
+          ) : <Text style={s.datoValor}>—</Text>}
+          {f.otrasMarcas ? <Text style={s.meta}>{'Otras: ' + f.otrasMarcas}</Text> : null}
+        </View>
+        <Dato titulo="Exhibidor SOCODA" valor={EXHIBIDORES[f.exhibidor]} />
+        <Dato titulo="Cocinas integrales" valor={f.cocinas ? COCINAS[f.cocinas] + (f.cocinas === 'si' && f.refCocinas != null ? ' · ' + f.refCocinas + ' referencias' : '') : ''} />
+        <Dato titulo="Proveedor" valor={[...(f.proveedores || []).map(p => PROVEEDORES[p] || p), f.otrosProveedores].filter(Boolean).join(', ')} />
+        {f.observaciones ? <Dato titulo="Observaciones" valor={f.observaciones} /> : null}
         <Dato titulo="Vendedor asignado" valor={f.vendedorAsignado} />
         {f.horario ? <Dato titulo="Horario (Google)" valor={f.horario.split(' | ').join('\n')} /> : null}
         {google ? <Dato titulo="Calificación en Google" valor={google} /> : null}
@@ -114,6 +127,8 @@ export default function FichaScreen({ route, navigation }) {
           <Text style={s.meta}>{'Vendedor: ' + (v.vendedor || '—')}</Text>
           {v.lineas && v.lineas.length ? <Text style={s.texto}>{'Líneas: ' + v.lineas.map(l => LINEAS[l] || l).join(', ')}</Text> : null}
           {v.competencia ? <Text style={s.texto}>{'Competencia: ' + v.competencia}</Text> : null}
+          {v.marcas ? <Text style={s.texto}>{'Marcas vistas: ' + (v.marcas.length ? v.marcas.map(m => MARCAS[m] || m).join(', ') : 'ninguna')}</Text> : null}
+          {v.exhibidor ? <Text style={s.texto}>{'Exhibidor: ' + (EXHIBIDORES[v.exhibidor] || v.exhibidor)}</Text> : null}
           {v.notas ? <Text style={s.texto}>{v.notas}</Text> : null}
         </View>
       )) : <Text style={s.vacio}>Sin visitas registradas.</Text>}
@@ -135,6 +150,7 @@ const s = StyleSheet.create({
   descartar: { gap: 8, padding: 14, borderRadius: radio.normal, borderWidth: 2, borderColor: color.linea },
   descartarTitulo: { fontSize: letra.normal, fontWeight: '800', color: color.texto },
   chips: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: 8 },
+  etiquetaSocoda: { backgroundColor: color.marca, color: color.marcaTexto },
   etiqueta: { fontSize: letra.mini, fontWeight: '700', color: color.grafito, paddingHorizontal: 10, paddingVertical: 4,
     borderRadius: radio.pastilla, backgroundColor: color.infoFondo, overflow: 'hidden' },
   subtitulo: { fontSize: letra.subtitulo, fontWeight: '800', color: color.texto, marginTop: 8 },

@@ -413,3 +413,39 @@ test('orden: estadísticas tampoco usan localeCompare', async () => {
     String.prototype.localeCompare = orig;
   }
 });
+
+test('marcas y comercial: valores fijos, la visita guarda lo visto y actualiza la ferretería, CSV de ida y vuelta', () => {
+  const d = base();
+  const f = R.guardarFerreteria(d, { id: 'f1', marcas: 'socoda|north|haceb', proveedores: ['chp', 'otro'], exhibidor: 'antiguo', cocinas: 'si', refCocinas: '3', observaciones: 'Territorio rojo' }, false);
+  assert.deepEqual([f.marcas, f.proveedores, f.exhibidor, f.cocinas, f.refCocinas, f.observaciones],
+    [['socoda', 'north'], ['chp'], 'antiguo', 'si', 3, 'Territorio rojo']);
+  const v = R.registrarVisita(d, { ferreteriaId: 'f1', resultado: 'no_compro', marcas: ['north'], exhibidor: 'no' }, true, HOY);
+  assert.deepEqual([v.marcas, v.exhibidor], [['north'], 'no']);
+  assert.deepEqual([d.ferreterias.find(x => x.id === 'f1').marcas, d.ferreterias.find(x => x.id === 'f1').exhibidor], [['north'], 'no']);
+  assert.ok(d.pendientes.ferreterias.f1);
+  const sinVer = R.registrarVisita(d, { ferreteriaId: 'f2', resultado: 'no_estaba' }, false, HOY);
+  assert.deepEqual([sinVer.marcas, sinVer.exhibidor], [null, null]);
+  const otra = R.vacio();
+  importarCSV(otra, exportarCSV(d), false);
+  const g = otra.ferreterias.find(x => x.id === 'f1');
+  assert.deepEqual([g.marcas, g.proveedores, g.observaciones], [['north'], ['chp'], 'Territorio rojo']);
+  // Una celda vacía al importar no borra lo guardado.
+  importarCSV(otra, 'id;nombre;observaciones;telefono\r\nf1;Alfa;;3001112233', false);
+  assert.deepEqual([otra.ferreterias.find(x => x.id === 'f1').observaciones, otra.ferreterias.find(x => x.id === 'f1').telefono], ['Territorio rojo', '3001112233']);
+});
+
+test('presencia de marcas: % sobre las censadas, por municipio, exhibidores y proveedores', async () => {
+  const E = await import('../src/nucleo/estadisticas.js');
+  const d = base();   // f1 Z1, f2 y f3 Z2
+  R.guardarFerreteria(d, { id: 'f1', marcas: ['socoda', 'north'], exhibidor: 'nuevo', proveedores: ['chp'] }, false);
+  R.guardarFerreteria(d, { id: 'f2', marcas: ['socoda'], exhibidor: 'antiguo', proveedores: ['chp', 'corbeta'] }, false);
+  // f3 sin censar: no cuenta en los porcentajes.
+  const m = E.estadisticas(d, { dias: 30 }, HOY).marcas;
+  assert.deepEqual([m.censadas, m.activas], [2, 3]);
+  const socoda = m.porMarca.find(x => x.clave === 'socoda');
+  assert.deepEqual([socoda.ferreterias, socoda.porcentaje], [2, 100]);
+  assert.equal(m.porMarca.find(x => x.clave === 'north').porcentaje, 50);
+  assert.deepEqual(m.porGrupo.find(g => g.clave === 'Z1').porMarca.north, 1);
+  assert.deepEqual(m.exhibidores.map(x => x.ferreterias), [0, 1, 1]);
+  assert.deepEqual(m.proveedores.map(p => [p.clave, p.ferreterias]), [['chp', 2], ['corbeta', 1]]);
+});

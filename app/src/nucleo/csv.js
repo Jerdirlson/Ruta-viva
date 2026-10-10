@@ -12,6 +12,9 @@ export const COLUMNAS_EXTRA = [
   ['categoria', 'categoria'], ['cliente_socoda', 'clienteSocoda'], ['vendedor_asignado', 'vendedorAsignado'],
   ['google_place_id', 'googlePlaceId'], ['web', 'web'], ['horario', 'horario'],
   ['calificacion', 'calificacion'], ['resenas', 'resenas'],
+  ['marcas', 'marcas'], ['otras_marcas', 'otrasMarcas'], ['exhibidor', 'exhibidor'], ['cocinas', 'cocinas'],
+  ['ref_cocinas', 'refCocinas'], ['proveedores', 'proveedores'], ['otros_proveedores', 'otrosProveedores'],
+  ['observaciones', 'observaciones'],
   ['descartada', 'descartada'], ['descartada_por', 'descartadaPor'], ['descartada_fecha', 'descartadaFecha']
 ];
 const COLUMNAS = CAMPOS.map(c => [c, c]).concat(COLUMNAS_EXTRA);
@@ -19,6 +22,7 @@ const COLUMNAS = CAMPOS.map(c => [c, c]).concat(COLUMNAS_EXTRA);
 function textoCelda(k, v) {
   if (v == null) return '';
   if (k === 'clienteSocoda') return v ? 'si' : 'no';
+  if (Array.isArray(v)) return v.join('|');
   if (k === 'lat' || k === 'lng' || k === 'calificacion') return String(v).replace('.', ',');
   return v;
 }
@@ -84,7 +88,7 @@ export function importarCSV(datos, texto, conServidor) {
                       datos.ferreterias.find(x => claveDup(x) === claveDup(r));
     if (existente) {
       const cambios = {};
-      presentes.forEach(([col, k]) => { cambios[k] = r[col]; });
+      presentes.forEach(([col, k]) => { if (r[col] !== '') cambios[k] = r[col]; });
       const c = conUbicacion ? validarCoordenadas(r.lat, r.lng) : null;
       const ubic = c && c.lat != null ? c : { lat: existente.lat, lng: existente.lng };
       Object.assign(existente, construirFerreteria(Object.assign({}, existente, cambios, ubic), existente.id));

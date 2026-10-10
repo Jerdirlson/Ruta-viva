@@ -22,6 +22,8 @@ bash api/run-tests.sh                      # pruebas del API contra Postgres des
 
 **Ferreterías descartadas** (migración 004): si no existe, cerró o no aplica, se marca `descartada` con motivo, quién y fecha; nunca se borra (historial). Sale de Hoy, del mapa, de los pendientes y del resumen; en Censo solo con el filtro "Descartada"; se puede reactivar. La fecha es texto ('' = activa) para que `coalesce` distinga "no vino" (null) de "reactivar" ('').
 
+**Marcas y datos comerciales** (migración 006): como el censo en Excel de SOCODA (V3-CONSOLIDADO FERRETERIAS): marcas presentes (lista fija de 9), exhibidor (no/nuevo/antiguo), cocinas y referencias, proveedores (lista fija) y observaciones fijas. La visita guarda lo visto (`visitas.marcas`, `visitas.exhibidor`) y actualiza la ferretería. Los porcentajes de presencia cuentan solo las ferreterías censadas. **Excel con su formato**: `GET /api/exportar/censo.xlsx` (solo admin, `api/src/exportar.js`). Al importar CSV, una celda vacía no borra lo guardado.
+
 **Carga desde Google Maps** (`api/scripts/buscar-google.mjs`): se corre a mano, no en el servidor. Lee la clave de `api/.env.places` y escribe en `api/datos-google/`; ambos están en `.gitignore`. Genera un CSV que se importa desde Datos; los ids `g_<place_id>` hacen que repetir la carga actualice en vez de duplicar. Tope de 900 consultas (1.000 gratis al mes).
 
 **La ubicación de la ferretería** (`lat`, `lng`) sigue la misma regla de los tres lugares: migración 002, `validarCoordenadas` en `api/src/validar.js` y en `web/db.js`. Van juntas o no van. El servidor nunca borra una ubicación guardada con un envío que no la trae (`coalesce`).
@@ -48,4 +50,5 @@ bash api/run-tests.sh                      # pruebas del API contra Postgres des
 - App nativa (`app/`): compila para Android e iOS; probada en su versión web con Playwright (modo local y servidor). Falta probarla en un celular físico (Expo Go) y generar el APK con EAS.
 - Censo inicial: 833 ferreterías y depósitos de Bucaramanga, Floridablanca, Girón y Piedecuesta sacados de Google Maps (oct. 2026), en `api/datos-google/ferreterias-google.csv` (no se sube al repo).
 - Producción: VM de Google Cloud (ver deploy/README.md), HTTPS con Caddy en https://136-108-178-241.sslip.io.
-- Pendiente: fotos de la fachada (migración 006), clave de Google Maps para el APK de Android, nota de voz + IA para registrar visitas.
+- Censo de SOCODA cruzado con Google (120 coinciden, 89 nuevas); el CSV para importar vive en api/datos-google/ (no se sube: datos personales).
+- Pendiente: fotos de la fachada (migración 007), clave de Google Maps para el APK de Android, nota de voz + IA para registrar visitas.

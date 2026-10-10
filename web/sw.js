@@ -1,6 +1,6 @@
 /* Service worker básico: red primero, caché como respaldo sin conexión. */
 // Subir la versión al cambiar archivos de la app para que los celulares la renueven.
-const CACHE = 'socoda-v12';
+const CACHE = 'socoda-v13';
 const ARCHIVOS = [
   'index.html',
   'styles.css',

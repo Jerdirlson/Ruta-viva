@@ -175,6 +175,45 @@ export default function ResumenScreen({ navigation }) {
         )) : <Text style={s.vacio}>Ninguno en este periodo.</Text>}
       </Seccion>
 
+      <Seccion titulo="Presencia de marcas">
+        <Text style={s.ayuda}>
+          {'Estado actual, sobre ' + e.marcas.censadas + ' ferreterías censadas (con marcas o exhibidor anotados) de ' + e.marcas.activas + ' activas.'}
+        </Text>
+        {e.marcas.censadas ? e.marcas.porMarca.filter(m => m.ferreterias || m.clave === 'socoda').map(m => (
+          <Barra key={m.clave} etiqueta={m.texto} valor={m.ferreterias} max={e.marcas.censadas}
+            detalle={m.ferreterias + ' · ' + m.porcentaje + '%'} />
+        )) : <Text style={s.vacio}>Todavía no hay ferreterías censadas.</Text>}
+      </Seccion>
+
+      {e.marcas.porGrupo.length ? (
+        <Seccion titulo="Presencia por municipio o zona">
+          {e.marcas.porGrupo.map(g => (
+            <View key={g.clave} style={s.item}>
+              <Text style={s.itemNombre}>{g.clave + ' · ' + g.censadas + ' censadas'}</Text>
+              <Text style={s.itemMeta}>
+                {Object.entries(g.porMarca).filter(([, n]) => n).map(([k, n]) => (e.marcas.porMarca.find(m => m.clave === k) || {}).texto + ' ' + n).join(' · ') || 'Sin marcas anotadas'}
+              </Text>
+            </View>
+          ))}
+        </Seccion>
+      ) : null}
+
+      {e.marcas.censadas ? (
+        <Seccion titulo="Exhibidores SOCODA">
+          {e.marcas.exhibidores.map(x => (
+            <Barra key={x.clave} etiqueta={x.texto} valor={x.ferreterias} max={e.marcas.censadas} detalle={String(x.ferreterias)} />
+          ))}
+        </Seccion>
+      ) : null}
+
+      {e.marcas.proveedores.length ? (
+        <Seccion titulo="Proveedores">
+          {e.marcas.proveedores.map(p => (
+            <Barra key={p.clave} etiqueta={p.texto} valor={p.ferreterias} max={e.marcas.proveedores[0].ferreterias} detalle={p.ferreterias + ' ferreterías'} />
+          ))}
+        </Seccion>
+      ) : null}
+
       <Seccion titulo="El censo hoy">
         <View style={s.cifras}>
           <Cifra valor={e.activas} texto="Activas" />

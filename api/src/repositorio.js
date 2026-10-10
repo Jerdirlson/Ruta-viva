@@ -48,12 +48,15 @@ export async function sincronizar(pool, lote, usuario) {
         `insert into ferreterias (id, nombre, direccion, barrio, municipio, telefono, zona, lat, lng,
            tipo, encargado, whatsapp, correo, categoria, cliente_socoda, vendedor_asignado,
            google_place_id, web, horario, calificacion, resenas,
-           descartada, descartada_por, descartada_fecha)
+           descartada, descartada_por, descartada_fecha,
+           marcas, otras_marcas, exhibidor, cocinas, ref_cocinas, proveedores, otros_proveedores, observaciones)
          values ($1, $2, $3, $4, $5, $6, $7, $8, $9,
            coalesce($10, 'ferreteria'), coalesce($11, ''), coalesce($12, ''), coalesce($13, ''),
            coalesce($14, ''), coalesce($15, false), coalesce($16, ''),
            coalesce($17, ''), coalesce($18, ''), coalesce($19, ''), $20, $21,
-           coalesce($22, ''), coalesce($23, ''), coalesce($24, ''))
+           coalesce($22, ''), coalesce($23, ''), coalesce($24, ''),
+           coalesce($25::text[], '{}'), coalesce($26, ''), coalesce($27, ''), coalesce($28, ''), $29,
+           coalesce($30::text[], '{}'), coalesce($31, ''), coalesce($32, ''))
          on conflict (id) do update set
            nombre = excluded.nombre, direccion = excluded.direccion, barrio = excluded.barrio,
            municipio = excluded.municipio, telefono = excluded.telefono, zona = excluded.zona,
@@ -69,11 +72,17 @@ export async function sincronizar(pool, lote, usuario) {
            descartada = coalesce($22, ferreterias.descartada),
            descartada_por = coalesce($23, ferreterias.descartada_por),
            descartada_fecha = coalesce($24, ferreterias.descartada_fecha),
+           marcas = coalesce($25::text[], ferreterias.marcas), otras_marcas = coalesce($26, ferreterias.otras_marcas),
+           exhibidor = coalesce($27, ferreterias.exhibidor), cocinas = coalesce($28, ferreterias.cocinas),
+           ref_cocinas = coalesce($29, ferreterias.ref_cocinas), proveedores = coalesce($30::text[], ferreterias.proveedores),
+           otros_proveedores = coalesce($31, ferreterias.otros_proveedores),
+           observaciones = coalesce($32, ferreterias.observaciones),
            actualizada = now()`,
         [x.id, x.nombre, x.direccion, x.barrio, x.municipio, x.telefono, x.zona, x.lat, x.lng,
           x.tipo, x.encargado, x.whatsapp, x.correo, x.categoria, x.clienteSocoda, x.vendedorAsignado,
           x.googlePlaceId, x.web, x.horario, x.calificacion, x.resenas,
-          x.descartada, x.descartadaPor, x.descartadaFecha]
+          x.descartada, x.descartadaPor, x.descartadaFecha,
+          x.marcas, x.otrasMarcas, x.exhibidor, x.cocinas, x.refCocinas, x.proveedores, x.otrosProveedores, x.observaciones]
       );
     }
 
@@ -92,10 +101,10 @@ export async function sincronizar(pool, lote, usuario) {
         continue;
       }
       await cliente.query(
-        `insert into visitas (id, ferreteria_id, fecha, vendedor, resultado, lineas, competencia, notas, creada, usuario_id)
-         values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+        `insert into visitas (id, ferreteria_id, fecha, vendedor, resultado, lineas, competencia, notas, creada, usuario_id, marcas, exhibidor)
+         values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
          on conflict (id) do nothing`,
-        [v.id, v.ferreteriaId, v.fecha, usuario.nombre, v.resultado, v.lineas, v.competencia, v.notas, v.creada, usuario.id]
+        [v.id, v.ferreteriaId, v.fecha, usuario.nombre, v.resultado, v.lineas, v.competencia, v.notas, v.creada, usuario.id, v.marcas, v.exhibidor]
       );
     }
 
@@ -121,7 +130,9 @@ export async function estado(pool, desde) {
             tipo, encargado, whatsapp, correo, categoria, cliente_socoda as "clienteSocoda",
             vendedor_asignado as "vendedorAsignado", google_place_id as "googlePlaceId",
             web, horario, calificacion, resenas,
-            descartada, descartada_por as "descartadaPor", descartada_fecha as "descartadaFecha"
+            descartada, descartada_por as "descartadaPor", descartada_fecha as "descartadaFecha",
+            marcas, otras_marcas as "otrasMarcas", exhibidor, cocinas, ref_cocinas as "refCocinas",
+            proveedores, otros_proveedores as "otrosProveedores", observaciones
        from ferreterias
       ${parcial ? 'where actualizada > $1' : ''}
       order by nombre, id`,
@@ -129,7 +140,7 @@ export async function estado(pool, desde) {
   );
   const v = await pool.query(
     `select id, ferreteria_id as "ferreteriaId", to_char(fecha, 'YYYY-MM-DD') as fecha, vendedor,
-            resultado, lineas, competencia, notas, creada
+            resultado, lineas, competencia, notas, creada, marcas, exhibidor
        from visitas
       ${parcial ? 'where recibida > $1' : ''}
       order by fecha desc, creada desc`,

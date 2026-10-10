@@ -7,7 +7,8 @@
 export const DIAS_SIN_VISITA = 30;
 export const CAMPOS = ['nombre', 'direccion', 'barrio', 'municipio', 'telefono', 'zona'];
 // Migración 003: contacto, comercial y Google Maps. Los de texto se recortan con LIMITES.
-export const TEXTOS_EXTRA = ['encargado', 'whatsapp', 'correo', 'vendedorAsignado', 'googlePlaceId', 'web', 'horario'];
+export const TEXTOS_EXTRA = ['encargado', 'whatsapp', 'correo', 'vendedorAsignado', 'googlePlaceId', 'web', 'horario',
+  'otrasMarcas', 'otrosProveedores', 'observaciones'];
 
 export const LIMITES = {
   id: 64,
@@ -26,7 +27,10 @@ export const LIMITES = {
   vendedorAsignado: 60,
   googlePlaceId: 255,
   web: 300,
-  horario: 600
+  horario: 600,
+  otrasMarcas: 120,
+  otrosProveedores: 120,
+  observaciones: 500,
 };
 
 export const TIPOS = {
@@ -34,6 +38,32 @@ export const TIPOS = {
   materiales: 'Materiales de construcción'
 };
 export const CATEGORIAS = ['A', 'B', 'C'];
+
+// Migración 006: presencia de marcas y datos comerciales (lista fija por ahora).
+// Mismos valores de api/src/validar.js y de la migración.
+export const MARCAS = {
+  socoda: 'SOCODA',
+  north: 'North',
+  atlantis: 'Atlantis',
+  guinovart: 'Guinovart',
+  aquaviva: 'Aquaviva',
+  mundial: 'Mundial',
+  gricol: 'Gricol',
+  fermetal: 'Fermetal',
+  tramontina: 'Tramontina'
+};
+export const PROVEEDORES = {
+  chp: 'CHP',
+  corbeta: 'Corbeta',
+  ferredistarco: 'Ferredistarco',
+  meico: 'Meico',
+  ardisa: 'Ardisa',
+  copricol: 'Copricol',
+  construcciones: 'Construcciones',
+  socoda: 'SOCODA directo'
+};
+export const EXHIBIDORES = { no: 'No tiene', nuevo: 'Sí, nuevo', antiguo: 'Sí, antiguo' };
+export const COCINAS = { si: 'Sí', no: 'No' };
 
 // Migración 004: por qué se descartó una ferretería ('' = activa). No se borra nunca.
 export const DESCARTES = {
@@ -155,6 +185,13 @@ export function construirFerreteria(f, id) {
   reg.clienteSocoda = siNo(f.clienteSocoda);
   reg.calificacion = numeroEntre(f.calificacion, 0, 5, false);
   reg.resenas = numeroEntre(f.resenas, 0, 1e8, true);
+  const listaDe = (v, permitidos) => [...new Set((Array.isArray(v) ? v : String(v || '').split(/[|,;]/))
+    .map(x => limpiar(x).toLowerCase()).filter(x => tiene(permitidos, x)))];
+  reg.marcas = listaDe(f.marcas, MARCAS);
+  reg.proveedores = listaDe(f.proveedores, PROVEEDORES);
+  reg.exhibidor = tiene(EXHIBIDORES, f.exhibidor) ? f.exhibidor : '';
+  reg.cocinas = tiene(COCINAS, f.cocinas) ? f.cocinas : '';
+  reg.refCocinas = numeroEntre(f.refCocinas, 0, 1000, true);
   reg.descartada = tiene(DESCARTES, f.descartada) ? f.descartada : '';
   reg.descartadaPor = recortar('vendedor', f.descartadaPor);
   reg.descartadaFecha = /^\d{4}-\d{2}-\d{2}$/.test(limpiar(f.descartadaFecha)) ? limpiar(f.descartadaFecha) : '';
@@ -224,10 +261,20 @@ export function registrarVisita(datos, v, conServidor, ahora = new Date()) {
     lineas: [...new Set((Array.isArray(v.lineas) ? v.lineas : []).filter(l => tiene(LINEAS, l)))],
     competencia: recortar('competencia', v.competencia),
     notas: recortar('notas', v.notas),
-    creada: ahora.toISOString()
+    creada: ahora.toISOString(),
+    // Lo que vio en esta visita (null = no lo registró): la historia de marcas y exhibidor.
+    marcas: Array.isArray(v.marcas) ? [...new Set(v.marcas.filter(m => tiene(MARCAS, m)))] : null,
+    exhibidor: tiene(EXHIBIDORES, v.exhibidor) ? v.exhibidor : null
   };
   datos.visitas.push(visita);
   encolar(datos, conServidor, 'visitas', visita);
+  // Lo visto pasa a ser el estado actual de la ferretería.
+  if (visita.marcas || visita.exhibidor) {
+    const f = datos.ferreterias.find(x => x.id === v.ferreteriaId);
+    if (visita.marcas) f.marcas = visita.marcas;
+    if (visita.exhibidor) f.exhibidor = visita.exhibidor;
+    encolar(datos, conServidor, 'ferreterias', f);
+  }
   return visita;
 }
 

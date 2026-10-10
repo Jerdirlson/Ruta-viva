@@ -1,6 +1,6 @@
 // Estadísticas del equipo para la pantalla Resumen. Lógica pura (se prueba en Node).
 // La misma cuenta vive en web/db.js (estadisticas): si se cambia una, se cambia la otra.
-import { LINEAS, RESULTADOS, censoDe, pendientesDe, comparar, compararTexto, fechaHaceDias, grupoDe, hoyISO, normaliza, limpiar } from './reglas.js';
+import { LINEAS, RESULTADOS, MARCAS, PROVEEDORES, EXHIBIDORES, censoDe, pendientesDe, comparar, compararTexto, fechaHaceDias, grupoDe, hoyISO, normaliza, limpiar } from './reglas.js';
 
 // dias: 1 = hoy, 7, 30, 0 = todo. vendedor: '' = todo el equipo.
 export const PERIODOS = [[1, 'Hoy'], [7, '7 días'], [30, '30 días'], [0, 'Todo']];
@@ -106,6 +106,8 @@ export function estadisticas(datos, { dias = 30, vendedor = '' } = {}, ahora = n
     .map(f => ({ id: f.id, nombre: f.nombre, grupo: grupoDe(f), fecha: f.ultima.fecha, vendedor: f.ultima.vendedor }))
     .sort((a, b) => compararTexto(a.fecha, b.fecha));
 
+  const presencia = presenciaDeMarcas(activas);
+
   // Cobertura: solo cuentan las activas (una descartada pudo visitarse antes de descartarla).
   const visitadasActivas = activas.filter(f => visitadas.has(f.id)).length;
 
@@ -130,7 +132,40 @@ export function estadisticas(datos, { dias = 30, vendedor = '' } = {}, ahora = n
     competencia,
     porDia,
     clientesNuevos,
-    seguimiento
+    seguimiento,
+    marcas: presencia
+  };
+}
+
+// Presencia de marcas, como las hojas "% ferreterías según marca" y "presencia según
+// ciudad" del censo en Excel. Es el estado actual (no depende del periodo). Solo cuentan
+// las ferreterías censadas (con marcas o exhibidor anotados): las que nadie ha revisado
+// todavía no deben bajar los porcentajes.
+export function presenciaDeMarcas(activas) {
+  const censadas = activas.filter(f => (f.marcas && f.marcas.length) || f.exhibidor);
+  const pctDe = n => (censadas.length ? Math.round(100 * n / censadas.length) : 0);
+  const porMarca = Object.keys(MARCAS).map(k => {
+    const n = censadas.filter(f => (f.marcas || []).includes(k)).length;
+    return { clave: k, texto: MARCAS[k], ferreterias: n, porcentaje: pctDe(n) };
+  });
+  const grupos = new Map();
+  censadas.forEach(f => {
+    const g = grupoDe(f);
+    if (!grupos.has(g)) grupos.set(g, { clave: g, censadas: 0, porMarca: Object.fromEntries(Object.keys(MARCAS).map(k => [k, 0])) });
+    const x = grupos.get(g);
+    x.censadas++;
+    (f.marcas || []).forEach(m => { if (m in x.porMarca) x.porMarca[m]++; });
+  });
+  const exhibidores = Object.keys(EXHIBIDORES).map(k => ({ clave: k, texto: EXHIBIDORES[k], ferreterias: censadas.filter(f => f.exhibidor === k).length }));
+  const proveedores = Object.keys(PROVEEDORES).map(k => ({ clave: k, texto: PROVEEDORES[k], ferreterias: activas.filter(f => (f.proveedores || []).includes(k)).length }))
+    .filter(p => p.ferreterias).sort((a, b) => b.ferreterias - a.ferreterias);
+  return {
+    censadas: censadas.length,
+    activas: activas.length,
+    porMarca,
+    porGrupo: [...grupos.values()].sort((a, b) => b.censadas - a.censadas || comparar(a.clave, b.clave)),
+    exhibidores,
+    proveedores
   };
 }
 

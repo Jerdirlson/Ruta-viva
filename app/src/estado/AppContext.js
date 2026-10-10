@@ -261,6 +261,18 @@ export function AppProvider({ children }) {
       await olvidarSesion();
     },
     listarUsuarios: async () => (await llamar('/api/usuarios', undefined, 'GET')).usuarios,
+    // Censo en Excel con el formato de SOCODA (solo admin). Devuelve los bytes del archivo.
+    descargarExcel: async () => {
+      let res;
+      try {
+        res = await pedir('/api/exportar/censo.xlsx', undefined, true, 'GET');
+      } catch (e) {
+        throw new Error('Sin conexión con el servidor. Revisa la señal e intenta de nuevo.');
+      }
+      if (res.status === 401) { await olvidarSesion(); throw new Error('Tu sesión venció: vuelve a entrar'); }
+      if (!res.ok) throw new Error(((await res.json().catch(() => ({}))).error) || 'No se pudo generar el Excel');
+      return new Uint8Array(await res.arrayBuffer());
+    },
     crearUsuario: async u => (await llamar('/api/usuarios', u)).usuario,
     actualizarUsuario: async (id, cambios) => (await llamar('/api/usuarios/' + encodeURIComponent(id), cambios, 'PATCH')).usuario,
     sincronizar: () => sincronizar(true),

@@ -437,6 +437,11 @@
           '. Tus visitas quedan registradas a tu nombre.</p>' +
         '<button class="btn btn-sec btn-ancho" data-ir="clave">Cambiar contraseña</button>' +
         '<button class="btn btn-sec btn-ancho" data-accion="salir">Cerrar sesión</button></div>' +
+      (sesion.usuario.rol === 'admin'
+        ? '<div class="bloque"><h3>Censo en Excel</h3><p class="ayuda">Con el formato del consolidado de ferreterías y las hojas de ' +
+          'resumen por marca y por ciudad, con lo último del servidor.</p>' +
+          '<button class="btn btn-pri btn-ancho" data-accion="excel">Descargar censo en Excel</button></div>'
+        : '') +
       '<div class="bloque"><h3>Sincronización</h3>' +
       '<p class="ayuda">' + esc(estadoActual().texto) + '</p>' +
       '<button class="btn btn-pri btn-ancho" data-accion="sync">Sincronizar ahora</button></div>';
@@ -681,6 +686,21 @@
   // ---------- acciones ----------
   function accion(nombre, boton) {
     if (nombre === 'sync') return sincronizarAhora(true);
+    if (nombre === 'excel') {
+      boton.disabled = true;
+      toast('Generando el Excel…');
+      return DB.descargarExcel()
+        .then(blob => {
+          const url = URL.createObjectURL(blob);
+          const a = document.createElement('a');
+          a.href = url;
+          a.download = 'censo_ferreterias_socoda_' + DB.hoyISO() + '.xlsx';
+          a.click();
+          setTimeout(() => URL.revokeObjectURL(url), 1000);
+        })
+        .catch(e => toast(e.message))
+        .finally(() => { boton.disabled = false; });
+    }
     if (nombre === 'salir') {
       const p = DB.estadoSync().pendientes;
       if (p && !confirm('Hay ' + p + ' cambio(s) sin enviar. Se quedan en este celular y se envían cuando vuelvas a entrar. ¿Cerrar sesión?')) return;
