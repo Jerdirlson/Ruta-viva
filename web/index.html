@@ -88,6 +88,7 @@
         <button type="button" class="cerrar" data-cerrar aria-label="Cerrar">✕</button>
       </header>
       <div class="hoja-cuerpo">
+        <input type="hidden" name="id_ferreteria">
         <label class="campo">Nombre *
           <input id="nueva-nombre" name="nombre" required maxlength="120">
         </label>
@@ -106,6 +107,41 @@
         <label class="campo">Zona
           <input id="nueva-zona" name="zona" list="lista-zonas" maxlength="40">
         </label>
+        <label class="campo">Tipo
+          <select id="nueva-tipo" name="tipo">
+            <option value="ferreteria">Ferretería</option>
+            <option value="materiales">Materiales de construcción</option>
+          </select>
+        </label>
+        <h3>Contacto</h3>
+        <p class="ayuda">Son datos personales: pídele permiso al encargado antes de guardarlos.</p>
+        <label class="campo">Encargado o dueño
+          <input id="nueva-encargado" name="encargado" maxlength="80">
+        </label>
+        <label class="campo">WhatsApp
+          <input id="nueva-whatsapp" name="whatsapp" type="tel" maxlength="30">
+        </label>
+        <label class="campo">Correo
+          <input id="nueva-correo" name="correo" type="email" maxlength="120">
+        </label>
+        <h3>Comercial</h3>
+        <label class="campo">¿Ya es cliente de SOCODA?
+          <select id="nueva-cliente" name="cliente_socoda">
+            <option value="no">No</option>
+            <option value="si">Sí</option>
+          </select>
+        </label>
+        <label class="campo">Categoría
+          <select id="nueva-categoria" name="categoria">
+            <option value="">Sin categoría</option>
+            <option value="A">A</option>
+            <option value="B">B</option>
+            <option value="C">C</option>
+          </select>
+        </label>
+        <label class="campo">Vendedor asignado
+          <input id="nueva-vendedor" name="vendedor_asignado" list="lista-vendedores" maxlength="60">
+        </label>
       </div>
       <footer class="hoja-pie">
         <button class="btn btn-pri btn-ancho">Guardar ferretería</button>
@@ -116,6 +152,7 @@
   <datalist id="lista-marcas"></datalist>
   <datalist id="lista-municipios"></datalist>
   <datalist id="lista-zonas"></datalist>
+  <datalist id="lista-vendedores"></datalist>
 
   <script src="vendor/leaflet/leaflet.js"></script>
   <script src="db.js"></script>

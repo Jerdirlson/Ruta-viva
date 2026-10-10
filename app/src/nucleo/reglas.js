@@ -6,6 +6,8 @@
 
 export const DIAS_SIN_VISITA = 30;
 export const CAMPOS = ['nombre', 'direccion', 'barrio', 'municipio', 'telefono', 'zona'];
+// Migración 003: contacto, comercial y Google Maps. Los de texto se recortan con LIMITES.
+export const TEXTOS_EXTRA = ['encargado', 'whatsapp', 'correo', 'vendedorAsignado', 'googlePlaceId', 'web', 'horario'];
 
 export const LIMITES = {
   id: 64,
@@ -17,7 +19,27 @@ export const LIMITES = {
   zona: 40,
   vendedor: 60,
   competencia: 80,
-  notas: 500
+  notas: 500,
+  encargado: 80,
+  whatsapp: 30,
+  correo: 120,
+  vendedorAsignado: 60,
+  googlePlaceId: 255,
+  web: 300,
+  horario: 600
+};
+
+export const TIPOS = {
+  ferreteria: 'Ferretería',
+  materiales: 'Materiales de construcción'
+};
+export const CATEGORIAS = ['A', 'B', 'C'];
+
+// Migración 004: por qué se descartó una ferretería ('' = activa). No se borra nunca.
+export const DESCARTES = {
+  no_existe: 'No existe en esa dirección',
+  cerro: 'Cerró',
+  no_aplica: 'No es ferretería / no aplica'
 };
 
 export const RESULTADOS = {
@@ -39,7 +61,8 @@ export const ESTADOS = {
   nueva: 'Sin visitar',
   visitada: 'Visitada',
   seguimiento: 'Pidió visita',
-  cliente: 'Cliente'
+  cliente: 'Cliente',
+  descartada: 'Descartada'
 };
 
 // ---------- utilidades ----------
@@ -106,20 +129,42 @@ export function validarCoordenadas(lat, lng) {
 export function claveDup(f) {
   return [normaliza(f.nombre), normaliza(f.direccion), normaliza(f.municipio)].join('|');
 }
+// Sí/no tal como llega de un formulario, un CSV o el servidor.
+export function siNo(v) {
+  return v === true || /^(si|sí|s|1|true|x)$/i.test(limpiar(v));
+}
+function numeroEntre(v, min, max, entero) {
+  if (v == null || limpiar(v) === '') return null;
+  const n = Number(String(v).replace(',', '.'));
+  if (!Number.isFinite(n) || n < min || n > max || (entero && !Number.isInteger(n))) return null;
+  return n;
+}
+
 export function construirFerreteria(f, id) {
   const reg = { id: recortar('id', id) };
   CAMPOS.forEach(c => { reg[c] = recortar(c, f[c]); });
   const c = validarCoordenadas(f.lat, f.lng) || { lat: null, lng: null };
   reg.lat = c.lat;
   reg.lng = c.lng;
+  reg.tipo = tiene(TIPOS, f.tipo) ? f.tipo : 'ferreteria';
+  TEXTOS_EXTRA.forEach(k => { reg[k] = recortar(k, f[k]); });
+  const cat = limpiar(f.categoria).toUpperCase();
+  reg.categoria = CATEGORIAS.includes(cat) ? cat : '';
+  reg.clienteSocoda = siNo(f.clienteSocoda);
+  reg.calificacion = numeroEntre(f.calificacion, 0, 5, false);
+  reg.resenas = numeroEntre(f.resenas, 0, 1e8, true);
+  reg.descartada = tiene(DESCARTES, f.descartada) ? f.descartada : '';
+  reg.descartadaPor = recortar('vendedor', f.descartadaPor);
+  reg.descartadaFecha = /^\d{4}-\d{2}-\d{2}$/.test(limpiar(f.descartadaFecha)) ? limpiar(f.descartadaFecha) : '';
   return reg;
 }
 
+// Nueva (sin id) o editar: lo que no viene en `f` se conserva de la guardada.
 export function guardarFerreteria(datos, f, conServidor) {
   const id = f.id || nuevoId('f_');
-  const reg = construirFerreteria(f, id);
-  if (!reg.nombre) throw new Error('El nombre es obligatorio');
   const i = datos.ferreterias.findIndex(x => x.id === id);
+  const reg = construirFerreteria(i >= 0 ? Object.assign({}, datos.ferreterias[i], f) : f, id);
+  if (!reg.nombre) throw new Error('El nombre es obligatorio');
   if (i >= 0) {
     // Editar sin ubicación no borra la que ya estaba.
     if (reg.lat == null) { reg.lat = datos.ferreterias[i].lat; reg.lng = datos.ferreterias[i].lng; }
@@ -138,6 +183,28 @@ export function guardarUbicacion(datos, id, lat, lng, conServidor) {
   if (!f) throw new Error('La ferretería no existe');
   f.lat = c.lat;
   f.lng = c.lng;
+  encolar(datos, conServidor, 'ferreterias', f);
+  return f;
+}
+
+// El vendedor fue y no existe, cerró o no aplica. Queda marcada (con quién y cuándo),
+// sale de Hoy, del mapa y de los pendientes, y conserva su historial de visitas.
+export function descartarFerreteria(datos, id, motivo, vendedor, conServidor, ahora = new Date()) {
+  if (!tiene(DESCARTES, motivo)) throw new Error('Elige por qué la descartas');
+  const f = datos.ferreterias.find(x => x.id === id);
+  if (!f) throw new Error('La ferretería no existe');
+  f.descartada = motivo;
+  f.descartadaPor = recortar('vendedor', vendedor);
+  f.descartadaFecha = hoyISO(ahora);
+  encolar(datos, conServidor, 'ferreterias', f);
+  return f;
+}
+export function reactivarFerreteria(datos, id, conServidor) {
+  const f = datos.ferreterias.find(x => x.id === id);
+  if (!f) throw new Error('La ferretería no existe');
+  f.descartada = '';
+  f.descartadaPor = '';
+  f.descartadaFecha = '';
   encolar(datos, conServidor, 'ferreterias', f);
   return f;
 }
@@ -165,11 +232,12 @@ export function registrarVisita(datos, v, conServidor, ahora = new Date()) {
 function ordenVisitas(a, b) {
   return b.fecha.localeCompare(a.fecha) || (b.creada || '').localeCompare(a.creada || '');
 }
-function estadoDe(ultima) {
-  if (!ultima) return 'nueva';
-  if (ultima.resultado === 'compro') return 'cliente';
-  if (ultima.resultado === 'pidio_visita') return 'seguimiento';
-  return 'visitada';
+// Descartada manda. Ya cliente de SOCODA antes de la app = cliente, salvo que haya pedido visita.
+function estadoDe(ultima, f) {
+  if (f && f.descartada) return 'descartada';
+  if (ultima && ultima.resultado === 'pidio_visita') return 'seguimiento';
+  if ((ultima && ultima.resultado === 'compro') || (f && f.clienteSocoda === true)) return 'cliente';
+  return ultima ? 'visitada' : 'nueva';
 }
 
 // Ferreterías enriquecidas con visitas, última visita, estado y días sin visita.
@@ -185,15 +253,16 @@ export function censoDe(datos, ahora = new Date()) {
     return Object.assign({}, f, {
       visitas,
       ultima,
-      estado: estadoDe(ultima),
+      estado: estadoDe(ultima, f),
       diasSinVisita: diasDesde(ultima ? ultima.fecha : null, ahora)
     });
   });
 }
 
 // Pendientes de hoy: pidió visita después, o sin visita hace más de 30 días (incluye nunca visitadas).
+// Las descartadas nunca son pendientes.
 export function pendientesDe(censo) {
-  return censo.filter(f => f.estado === 'seguimiento' || f.diasSinVisita > DIAS_SIN_VISITA);
+  return censo.filter(f => f.estado !== 'descartada' && (f.estado === 'seguimiento' || f.diasSinVisita > DIAS_SIN_VISITA));
 }
 
 // Color del pin según lo que el vendedor tiene que hacer.
@@ -205,6 +274,11 @@ export function colorPin(f) {
 }
 
 const ORDEN = (a, b) => String(a).localeCompare(b, 'es');
+
+// Grupo para filtrar y separar la lista: la zona, o el municipio si aún no tiene zona.
+export function grupoDe(f) {
+  return f.zona || f.municipio || 'Sin zona';
+}
 export function ordenZona(a, b) {
   return ORDEN(a.zona || '~', b.zona || '~') ||
     ORDEN(a.municipio || '~', b.municipio || '~') ||
@@ -249,7 +323,7 @@ export function resumen(datos, dias, ahora = new Date()) {
     porZona: resumenPor(visitas, v => zonaDe.get(v.ferreteriaId) || 'Sin zona'),
     porVendedor: resumenPor(visitas, v => v.vendedor || 'Sin nombre'),
     clientesNuevos,
-    sinVisitar: censoDe(datos, ahora).filter(f => f.diasSinVisita > DIAS_SIN_VISITA)
+    sinVisitar: censoDe(datos, ahora).filter(f => f.estado !== 'descartada' && f.diasSinVisita > DIAS_SIN_VISITA)
   };
 }
 

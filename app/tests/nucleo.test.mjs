@@ -153,3 +153,140 @@ test('respaldo: nunca incluye la clave del equipo; restaurar con servidor encola
   assert.equal(contarPendientes(nuevo), 4);
   assert.throws(() => R.restaurarRespaldo(d, '{"x":1}', false), /respaldo/);
 });
+
+test('contacto y comercial: valores por defecto, normalización y límites', () => {
+  const d = base();
+  const f = d.ferreterias.find(x => x.id === 'f1');
+  assert.deepEqual([f.tipo, f.encargado, f.categoria, f.clienteSocoda, f.calificacion, f.resenas],
+    ['ferreteria', '', '', false, null, null]);
+  const g = R.guardarFerreteria(d, {
+    nombre: 'Delta', tipo: 'materiales', categoria: 'b', clienteSocoda: 'Sí', calificacion: '4,5', resenas: '12',
+    encargado: 'x'.repeat(200)
+  }, false);
+  assert.deepEqual([g.tipo, g.categoria, g.clienteSocoda, g.calificacion, g.resenas, g.encargado.length],
+    ['materiales', 'B', true, 4.5, 12, R.LIMITES.encargado]);
+  const h = R.guardarFerreteria(d, { nombre: 'Épsilon', tipo: 'panaderia', categoria: 'Z', calificacion: 9 }, false);
+  assert.deepEqual([h.tipo, h.categoria, h.calificacion], ['ferreteria', '', null]);
+});
+
+test('editar una ferretería conserva lo que el formulario no trae (Google, ubicación)', () => {
+  const d = base();
+  R.guardarFerreteria(d, { id: 'f1', googlePlaceId: 'ChIJ1', horario: 'lunes: 8–6', calificacion: 4.2 }, false);
+  const f = R.guardarFerreteria(d, { id: 'f1', encargado: 'Don Pedro', whatsapp: '300 123 4567' }, false);
+  assert.deepEqual([f.nombre, f.googlePlaceId, f.horario, f.calificacion, f.encargado, f.lat],
+    ['Alfa', 'ChIJ1', 'lunes: 8–6', 4.2, 'Don Pedro', 7.1186]);
+});
+
+test('ya cliente de SOCODA cuenta como cliente, salvo que pida visita', () => {
+  const d = base();
+  R.guardarFerreteria(d, { id: 'f3', clienteSocoda: true }, false);
+  R.guardarFerreteria(d, { id: 'f2', clienteSocoda: true }, false);
+  R.registrarVisita(d, { ferreteriaId: 'f2', resultado: 'pidio_visita', fecha: '2026-10-09' }, false, HOY);
+  const c = Object.fromEntries(R.censoDe(d, HOY).map(f => [f.id, f]));
+  assert.equal(c.f3.estado, 'cliente');
+  assert.equal(c.f2.estado, 'seguimiento');
+});
+
+test('CSV de Google: importa sus columnas, no duplica al repetir y exporta todo', () => {
+  const csv = '﻿id;nombre;direccion;barrio;municipio;telefono;zona;lat;lng;tipo;google_place_id;web;horario;calificacion;resenas;estado_google;maps\r\n' +
+    'g_ChIJ1;Ferretería Cabecera;Cra. 35A #48-131;Cabecera;Bucaramanga;(607) 6803060;;7,1186;-73,1105;materiales;ChIJ1;https://x.co;lunes: 8–6;4,5;120;OPERATIONAL;https://maps';
+  const d = R.vacio();
+  assert.deepEqual(importarCSV(d, csv, false), { nuevas: 1, actualizadas: 0, omitidas: 0 });
+  R.guardarFerreteria(d, { id: 'g_ChIJ1', encargado: 'Doña Marta', clienteSocoda: true }, false);
+  assert.deepEqual(importarCSV(d, csv, false), { nuevas: 0, actualizadas: 1, omitidas: 0 });
+  const f = d.ferreterias[0];
+  assert.deepEqual([d.ferreterias.length, f.tipo, f.googlePlaceId, f.calificacion, f.resenas, f.lat, f.encargado, f.clienteSocoda],
+    [1, 'materiales', 'ChIJ1', 4.5, 120, 7.1186, 'Doña Marta', true]);
+  const otra = R.vacio();
+  importarCSV(otra, exportarCSV(d), false);
+  assert.deepEqual(otra.ferreterias[0], f);
+});
+
+test('WhatsApp: celular colombiano con o sin 57; fijo no abre WhatsApp', () => {
+  assert.equal(G.urlWhatsapp('300 123 4567'), 'https://wa.me/573001234567');
+  assert.equal(G.urlWhatsapp('+57 300-123-4567'), 'https://wa.me/573001234567');
+  assert.equal(G.urlWhatsapp('(607) 6803060'), '');
+  assert.equal(G.urlWhatsapp(''), '');
+});
+
+test('mapa: agrupa solo lo que se taparía en pantalla y siempre sobre una ferretería real', () => {
+  const lista = [
+    { id: 'a', lat: 7.11800, lng: -73.11000, c: 'gris' },
+    { id: 'b', lat: 7.11801, lng: -73.11001, c: 'amarillo' },
+    { id: 'c', lat: 7.11800, lng: -73.11000, c: 'rojo' },     // misma coordenada que a
+    { id: 'd', lat: 6.99000, lng: -73.05000, c: 'verde' },
+    { id: 'e', lat: null, lng: null, c: 'rojo' }
+  ];
+  const colorDe = f => f.c;
+  const tamano = { ancho: 400, alto: 400 };
+  // Vista de toda el área (~0,3°): a, b y c caen en el mismo píxel.
+  const lejos = G.agrupar(lista, { latitudeDelta: 0.3, longitudeDelta: 0.3 }, tamano, colorDe);
+  assert.equal(lejos.length, 2);
+  const g = lejos.find(x => x.ferreterias.length === 3);
+  assert.equal(g.color, 'amarillo');
+  assert.deepEqual([g.lat, g.lng], [7.11801, -73.11001]);   // exactamente sobre b, la más urgente
+  // Muy de cerca (~45 m de ancho): a y c tienen la misma coordenada, así que siguen juntas
+  // (y se eligen de una lista); ningún marcador queda encima de otro.
+  const cerca = G.agrupar(lista, { latitudeDelta: 0.0004, longitudeDelta: 0.0004 }, tamano, colorDe);
+  const juntas = cerca.find(x => x.ferreterias.some(f => f.id === 'a'));
+  assert.ok(juntas.ferreterias.some(f => f.id === 'c'));
+  assert.ok(G.extensionM(juntas.ferreterias) < G.MISMO_SITIO_M);
+  // Ni el círculo más grande alcanza el área táctil de su vecino.
+  assert.ok(G.RADIO_PX > G.GRUPO_MAX_PX / 2 + G.TOQUE_PUNTO_PX / 2);
+  // Ningún par de marcadores queda a menos del radio en pantalla.
+  const pxDe = x => ({ x: x.lng / (0.0004 / 400), y: x.lat / (0.0004 / 400) });
+  for (const m of cerca) for (const n of cerca) {
+    if (m !== n) assert.ok(Math.hypot(pxDe(m).x - pxDe(n).x, pxDe(m).y - pxDe(n).y) >= G.RADIO_PX - 1e-6);
+  }
+  // Sin tamaño de pantalla todavía: todas sueltas, en su punto exacto.
+  assert.deepEqual(G.agrupar(lista, null, null, colorDe).map(x => x.clave).sort(), ['a', 'b', 'c', 'd']);
+});
+
+test('grupo: la zona, o el municipio si no tiene zona', () => {
+  assert.equal(R.grupoDe({ zona: 'Zona 1', municipio: 'Girón' }), 'Zona 1');
+  assert.equal(R.grupoDe({ zona: '', municipio: 'Girón' }), 'Girón');
+  assert.equal(R.grupoDe({}), 'Sin zona');
+});
+
+test('mapa: el toque elige el marcador bajo el dedo, el más cercano, o ninguno', () => {
+  const region = { latitudeDelta: 0.004, longitudeDelta: 0.004 };   // 1e-5 grados por px en 400 px
+  const tamano = { ancho: 400, alto: 400 };
+  const grupos = [
+    { clave: 'a', lat: 7.1180, lng: -73.1100, ferreterias: [{}] },
+    { clave: 'b', lat: 7.1180, lng: -73.1095, ferreterias: [{}] }   // 50 px a la derecha
+  ];
+  const radio = () => 20;
+  assert.equal(G.marcadorEn(grupos, { lat: 7.11805, lng: -73.10995 }, region, tamano, radio).clave, 'a');  // a 7 px de a
+  assert.equal(G.marcadorEn(grupos, { lat: 7.1180, lng: -73.10965 }, region, tamano, radio).clave, 'b');   // a 15 px de b
+  assert.equal(G.marcadorEn(grupos, { lat: 7.1185, lng: -73.1100 }, region, tamano, radio), null);         // a 50 px de todo
+  assert.equal(G.marcadorEn(grupos, null, region, tamano, radio), null);
+});
+
+test('descartar: sale de pendientes y del resumen, conserva visitas, se puede reactivar', () => {
+  const d = base();
+  R.registrarVisita(d, { ferreteriaId: 'f3', resultado: 'no_estaba', fecha: '2026-08-01' }, false, HOY);
+  assert.ok(R.pendientesDe(R.censoDe(d, HOY)).some(f => f.id === 'f3'));
+  assert.throws(() => R.descartarFerreteria(d, 'f3', 'borrada', 'Ana', false, HOY), /por qué/);
+  const f = R.descartarFerreteria(d, 'f3', 'no_existe', 'Ana', true, HOY);
+  assert.deepEqual([f.descartada, f.descartadaPor, f.descartadaFecha], ['no_existe', 'Ana', '2026-10-10']);
+  assert.ok(d.pendientes.ferreterias.f3);
+  const c = R.censoDe(d, HOY).find(x => x.id === 'f3');
+  assert.equal(c.estado, 'descartada');
+  assert.equal(c.visitas.length, 1);
+  assert.ok(!R.pendientesDe(R.censoDe(d, HOY)).some(x => x.id === 'f3'));
+  assert.ok(!R.resumen(d, 0, HOY).sinVisitar.some(x => x.id === 'f3'));
+  // Editar la ferretería no la reactiva sin querer.
+  R.guardarFerreteria(d, { id: 'f3', telefono: '3001112233' }, false);
+  assert.equal(d.ferreterias.find(x => x.id === 'f3').descartada, 'no_existe');
+  R.reactivarFerreteria(d, 'f3', false);
+  assert.equal(R.censoDe(d, HOY).find(x => x.id === 'f3').estado, 'visitada');
+});
+
+test('CSV: el descarte viaja de ida y vuelta', () => {
+  const d = base();
+  R.descartarFerreteria(d, 'f2', 'cerro', 'Ana', false, HOY);
+  const otra = R.vacio();
+  importarCSV(otra, exportarCSV(d), false);
+  const f = otra.ferreterias.find(x => x.id === 'f2');
+  assert.deepEqual([f.descartada, f.descartadaPor, f.descartadaFecha], ['cerro', 'Ana', '2026-10-10']);
+});

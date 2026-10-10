@@ -35,15 +35,37 @@ export async function sincronizar(pool, lote) {
       const x = r.valor;
       // Una ubicación guardada nunca se pierde por un envío que no la trae
       // (por ejemplo, un celular con una versión vieja de la app): coalesce.
+      // Igual con los campos de la migración 003, que llegan en null si no vienen.
       await cliente.query(
-        `insert into ferreterias (id, nombre, direccion, barrio, municipio, telefono, zona, lat, lng)
-         values ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+        `insert into ferreterias (id, nombre, direccion, barrio, municipio, telefono, zona, lat, lng,
+           tipo, encargado, whatsapp, correo, categoria, cliente_socoda, vendedor_asignado,
+           google_place_id, web, horario, calificacion, resenas,
+           descartada, descartada_por, descartada_fecha)
+         values ($1, $2, $3, $4, $5, $6, $7, $8, $9,
+           coalesce($10, 'ferreteria'), coalesce($11, ''), coalesce($12, ''), coalesce($13, ''),
+           coalesce($14, ''), coalesce($15, false), coalesce($16, ''),
+           coalesce($17, ''), coalesce($18, ''), coalesce($19, ''), $20, $21,
+           coalesce($22, ''), coalesce($23, ''), coalesce($24, ''))
          on conflict (id) do update set
            nombre = excluded.nombre, direccion = excluded.direccion, barrio = excluded.barrio,
            municipio = excluded.municipio, telefono = excluded.telefono, zona = excluded.zona,
            lat = coalesce(excluded.lat, ferreterias.lat), lng = coalesce(excluded.lng, ferreterias.lng),
+           tipo = coalesce($10, ferreterias.tipo), encargado = coalesce($11, ferreterias.encargado),
+           whatsapp = coalesce($12, ferreterias.whatsapp), correo = coalesce($13, ferreterias.correo),
+           categoria = coalesce($14, ferreterias.categoria),
+           cliente_socoda = coalesce($15, ferreterias.cliente_socoda),
+           vendedor_asignado = coalesce($16, ferreterias.vendedor_asignado),
+           google_place_id = coalesce($17, ferreterias.google_place_id),
+           web = coalesce($18, ferreterias.web), horario = coalesce($19, ferreterias.horario),
+           calificacion = coalesce($20, ferreterias.calificacion), resenas = coalesce($21, ferreterias.resenas),
+           descartada = coalesce($22, ferreterias.descartada),
+           descartada_por = coalesce($23, ferreterias.descartada_por),
+           descartada_fecha = coalesce($24, ferreterias.descartada_fecha),
            actualizada = now()`,
-        [x.id, x.nombre, x.direccion, x.barrio, x.municipio, x.telefono, x.zona, x.lat, x.lng]
+        [x.id, x.nombre, x.direccion, x.barrio, x.municipio, x.telefono, x.zona, x.lat, x.lng,
+          x.tipo, x.encargado, x.whatsapp, x.correo, x.categoria, x.clienteSocoda, x.vendedorAsignado,
+          x.googlePlaceId, x.web, x.horario, x.calificacion, x.resenas,
+          x.descartada, x.descartadaPor, x.descartadaFecha]
       );
     }
 
@@ -83,7 +105,13 @@ export async function sincronizar(pool, lote) {
 // Estado completo, con los mismos nombres de campo que usa web/db.js.
 export async function estado(pool) {
   const f = await pool.query(
-    'select id, nombre, direccion, barrio, municipio, telefono, zona, lat, lng from ferreterias order by nombre, id'
+    `select id, nombre, direccion, barrio, municipio, telefono, zona, lat, lng,
+            tipo, encargado, whatsapp, correo, categoria, cliente_socoda as "clienteSocoda",
+            vendedor_asignado as "vendedorAsignado", google_place_id as "googlePlaceId",
+            web, horario, calificacion, resenas,
+            descartada, descartada_por as "descartadaPor", descartada_fecha as "descartadaFecha"
+       from ferreterias
+      order by nombre, id`
   );
   const v = await pool.query(
     `select id, ferreteria_id as "ferreteriaId", to_char(fecha, 'YYYY-MM-DD') as fecha, vendedor,

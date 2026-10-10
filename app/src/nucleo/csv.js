@@ -1,9 +1,27 @@
 // Importar y exportar el censo en CSV. Lógica pura.
 //
 // Columnas reconocidas: id (opcional), nombre, direccion, barrio, municipio, telefono,
-// zona, y opcionalmente lat y lng (punto o coma decimal). Separador ; o , (se detecta).
+// zona, y opcionalmente lat y lng (punto o coma decimal) y las de COLUMNAS_EXTRA
+// (las mismas que genera api/scripts/buscar-google.mjs). Separador ; o , (se detecta).
 // Exporta con ; y coma decimal para que Excel en español lo abra bien.
-import { CAMPOS, limpiar, normaliza, recortar, nuevoId, claveDup, construirFerreteria, validarCoordenadas } from './reglas.js';
+import { CAMPOS, limpiar, normaliza, nuevoId, claveDup, construirFerreteria, validarCoordenadas } from './reglas.js';
+
+// [columna del CSV, campo de la ferretería]
+export const COLUMNAS_EXTRA = [
+  ['tipo', 'tipo'], ['encargado', 'encargado'], ['whatsapp', 'whatsapp'], ['correo', 'correo'],
+  ['categoria', 'categoria'], ['cliente_socoda', 'clienteSocoda'], ['vendedor_asignado', 'vendedorAsignado'],
+  ['google_place_id', 'googlePlaceId'], ['web', 'web'], ['horario', 'horario'],
+  ['calificacion', 'calificacion'], ['resenas', 'resenas'],
+  ['descartada', 'descartada'], ['descartada_por', 'descartadaPor'], ['descartada_fecha', 'descartadaFecha']
+];
+const COLUMNAS = CAMPOS.map(c => [c, c]).concat(COLUMNAS_EXTRA);
+
+function textoCelda(k, v) {
+  if (v == null) return '';
+  if (k === 'clienteSocoda') return v ? 'si' : 'no';
+  if (k === 'lat' || k === 'lng' || k === 'calificacion') return String(v).replace('.', ',');
+  return v;
+}
 
 function celdaCSV(v) {
   const s = String(v == null ? '' : v);
@@ -11,11 +29,9 @@ function celdaCSV(v) {
 }
 
 export function exportarCSV(datos) {
-  const cabecera = ['id'].concat(CAMPOS, ['lat', 'lng']);
-  const filas = [cabecera.join(';')].concat(
-    datos.ferreterias.map(f => cabecera.map(c =>
-      celdaCSV((c === 'lat' || c === 'lng') && f[c] != null ? String(f[c]).replace('.', ',') : f[c])
-    ).join(';'))
+  const cols = [['id', 'id']].concat(CAMPOS.map(c => [c, c]), [['lat', 'lat'], ['lng', 'lng']], COLUMNAS_EXTRA);
+  const filas = [cols.map(c => c[0]).join(';')].concat(
+    datos.ferreterias.map(f => cols.map(([, k]) => celdaCSV(textoCelda(k, f[k]))).join(';'))
   );
   return '﻿' + filas.join('\r\n');
 }
@@ -55,7 +71,7 @@ export function importarCSV(datos, texto, conServidor) {
   if (filas.length < 2) throw new Error('El archivo no tiene filas de datos');
   const enc = filas[0].map(h => normaliza(h).replace(/ /g, '_'));
   if (!enc.includes('nombre')) throw new Error('Falta la columna "nombre"');
-  const campos = CAMPOS.filter(c => enc.includes(c));
+  const presentes = COLUMNAS.filter(([col]) => enc.includes(col));
   const conUbicacion = enc.includes('lat') && enc.includes('lng');
   const cont = { nuevas: 0, actualizadas: 0, omitidas: 0 };
   const encolar = f => { if (conServidor) datos.pendientes.ferreterias[f.id] = f; };
@@ -67,13 +83,17 @@ export function importarCSV(datos, texto, conServidor) {
     const existente = (r.id && datos.ferreterias.find(x => x.id === r.id)) ||
                       datos.ferreterias.find(x => claveDup(x) === claveDup(r));
     if (existente) {
-      campos.forEach(c => { existente[c] = recortar(c, r[c]); });
+      const cambios = {};
+      presentes.forEach(([col, k]) => { cambios[k] = r[col]; });
       const c = conUbicacion ? validarCoordenadas(r.lat, r.lng) : null;
-      if (c && c.lat != null) { existente.lat = c.lat; existente.lng = c.lng; }
+      const ubic = c && c.lat != null ? c : { lat: existente.lat, lng: existente.lng };
+      Object.assign(existente, construirFerreteria(Object.assign({}, existente, cambios, ubic), existente.id));
       encolar(existente);
       cont.actualizadas++;
     } else {
-      const nueva = construirFerreteria(r, r.id || nuevoId('f_'));
+      const campos = {};
+      presentes.forEach(([col, k]) => { campos[k] = r[col]; });
+      const nueva = construirFerreteria(Object.assign(campos, { lat: r.lat, lng: r.lng }), r.id || nuevoId('f_'));
       datos.ferreterias.push(nueva);
       encolar(nueva);
       cont.nuevas++;

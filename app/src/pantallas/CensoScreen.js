@@ -51,7 +51,7 @@ export default function CensoScreen({ navigation }) {
   const filtradas = censo.filter(f =>
     (!zona || f.zona === zona) &&
     (!municipio || f.municipio === municipio) &&
-    (!estado || f.estado === estado) &&
+    (estado ? f.estado === estado : f.estado !== 'descartada') &&
     (!busqueda || normaliza(f.nombre + ' ' + f.barrio).includes(busqueda))
   ).sort(ordenZona);
 

@@ -18,6 +18,12 @@ bash api/run-tests.sh                      # pruebas del API contra Postgres des
 
 **App nativa (`app/`, Expo SDK 57).** `src/nucleo/` es lógica pura (sin React Native) y se prueba con `cd app && npm test`. Solo `src/datos/` y `src/estado/` tocan el celular (AsyncStorage, GPS, archivos). `src/datos/ejemplo.json` es copia de `web/data/ferreterias.json`. `EXPO_PUBLIC_API_URL` se incrusta al compilar: al cambiarla, `npx expo start --clear`. `expo install` no funciona en entornos sin acceso a api.expo.dev: tomar las versiones de `node_modules/expo/bundledNativeModules.json`.
 
+**Campos de la migración 003** (tipo, encargado, whatsapp, correo, categoria, clienteSocoda, vendedorAsignado, googlePlaceId, web, horario, calificacion, resenas) son opcionales en el API: si un envío no los trae (null), el servidor conserva lo guardado (`coalesce` en `api/src/repositorio.js`). Editar en el celular mezcla con lo guardado (`guardarFerreteria`), así el formulario no borra los datos de Google. Encargado, WhatsApp y correo son datos personales (Ley 1581 de 2012): la app pide permiso antes de guardarlos.
+
+**Ferreterías descartadas** (migración 004): si no existe, cerró o no aplica, se marca `descartada` con motivo, quién y fecha; nunca se borra (historial). Sale de Hoy, del mapa, de los pendientes y del resumen; en Censo solo con el filtro "Descartada"; se puede reactivar. La fecha es texto ('' = activa) para que `coalesce` distinga "no vino" (null) de "reactivar" ('').
+
+**Carga desde Google Maps** (`api/scripts/buscar-google.mjs`): se corre a mano, no en el servidor. Lee la clave de `api/.env.places` y escribe en `api/datos-google/`; ambos están en `.gitignore`. Genera un CSV que se importa desde Datos; los ids `g_<place_id>` hacen que repetir la carga actualice en vez de duplicar. Tope de 900 consultas (1.000 gratis al mes).
+
 **La ubicación de la ferretería** (`lat`, `lng`) sigue la misma regla de los tres lugares: migración 002, `validarCoordenadas` en `api/src/validar.js` y en `web/db.js`. Van juntas o no van. El servidor nunca borra una ubicación guardada con un envío que no la trae (`coalesce`).
 
 **La posición del vendedor no se guarda ni se envía.** Solo vive en memoria (`ui.posicion` en `web/app.js`) para ordenar por cercanía. No agregar rastreo de vendedores.
@@ -38,4 +44,5 @@ bash api/run-tests.sh                      # pruebas del API contra Postgres des
 
 - Listo y probado en local: app, sincronización entre varios celulares, cola sin conexión, API, migraciones, respaldo y restauración, mapa, "Cerca de mí", ruta por cercanía y "Guardar ubicación aquí".
 - App nativa (`app/`): compila para Android e iOS; probada en su versión web con Playwright (modo local y servidor). Falta probarla en un celular físico (Expo Go) y generar el APK con EAS.
-- Pendiente: mapear el Excel real del censo, elegir servidor y desplegar, clave de Google Maps para el APK de Android.
+- Censo inicial: 833 ferreterías y depósitos de Bucaramanga, Floridablanca, Girón y Piedecuesta sacados de Google Maps (oct. 2026), en `api/datos-google/ferreterias-google.csv` (no se sube al repo).
+- Pendiente: fotos de la fachada (migración 005), elegir servidor y desplegar, clave de Google Maps para el APK de Android.

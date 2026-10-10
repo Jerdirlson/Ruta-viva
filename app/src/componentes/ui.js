@@ -46,8 +46,8 @@ export function Opcion({ titulo, activa, onPress, estilo, chica, testID }) {
 }
 
 export function ChipEstado({ estado }) {
-  const fondo = { cliente: color.okFondo, seguimiento: color.avisoFondo, visitada: color.infoFondo }[estado] || color.superficie;
-  const tinta = { cliente: color.okTexto, seguimiento: color.avisoTexto, visitada: color.grafito }[estado] || color.texto;
+  const fondo = { cliente: color.okFondo, seguimiento: color.avisoFondo, visitada: color.infoFondo, descartada: color.grafito }[estado] || color.superficie;
+  const tinta = { cliente: color.okTexto, seguimiento: color.avisoTexto, visitada: color.grafito, descartada: color.grafitoTexto }[estado] || color.texto;
   return (
     <View style={[e.chip, { backgroundColor: fondo }]}>
       <Text style={[e.chipTexto, { color: tinta }]}>{ESTADOS[estado] || estado}</Text>
@@ -78,7 +78,9 @@ export function Seccion({ titulo, children }) {
 }
 
 export function abrir(url, avisar) {
-  Linking.openURL(url).catch(() => avisar && avisar('No se pudo abrir: ' + url));
+  Linking.openURL(url).catch(() => {
+    if (avisar) avisar('No se pudo abrir: ' + url);
+  });
 }
 
 // Aviso emergente al pie de la pantalla.

@@ -15,9 +15,11 @@
   const CLAVE = 'socoda.v1';
   const DIAS_SIN_VISITA = 30;
   const CAMPOS = ['nombre', 'direccion', 'barrio', 'municipio', 'telefono', 'zona'];
+  // Migración 003: contacto, comercial y Google Maps. Los de texto se recortan con LIMITES.
+  const TEXTOS_EXTRA = ['encargado', 'whatsapp', 'correo', 'vendedorAsignado', 'googlePlaceId', 'web', 'horario'];
 
-  // Mismos límites que api/src/validar.js y api/migrations/001_inicial.sql.
-  // Si se cambia uno, se cambian los tres.
+  // Mismos límites que api/src/validar.js, api/migrations/*.sql y app/src/nucleo/reglas.js.
+  // Si se cambia uno, se cambian todos.
   const LIMITES = {
     id: 64,
     nombre: 120,
@@ -28,7 +30,27 @@
     zona: 40,
     vendedor: 60,
     competencia: 80,
-    notas: 500
+    notas: 500,
+    encargado: 80,
+    whatsapp: 30,
+    correo: 120,
+    vendedorAsignado: 60,
+    googlePlaceId: 255,
+    web: 300,
+    horario: 600
+  };
+
+  const TIPOS = {
+    ferreteria: 'Ferretería',
+    materiales: 'Materiales de construcción'
+  };
+  const CATEGORIAS = ['A', 'B', 'C'];
+
+  // Migración 004: por qué se descartó una ferretería ('' = activa). No se borra nunca.
+  const DESCARTES = {
+    no_existe: 'No existe en esa dirección',
+    cerro: 'Cerró',
+    no_aplica: 'No es ferretería / no aplica'
   };
 
   const RESULTADOS = {
@@ -50,7 +72,8 @@
     nueva: 'Sin visitar',
     visitada: 'Visitada',
     seguimiento: 'Pidió visita',
-    cliente: 'Cliente'
+    cliente: 'Cliente',
+    descartada: 'Descartada'
   };
 
   // ---------- utilidades ----------
@@ -122,20 +145,41 @@
         a < -90 || a > 90 || o < -180 || o > 180) return null;
     return { lat: a, lng: o };
   }
+  // Sí/no tal como llega de un formulario, un CSV o el servidor.
+  function siNo(v) {
+    return v === true || /^(si|sí|s|1|true|x)$/i.test(limpiar(v));
+  }
+  function numeroEntre(v, min, max, entero) {
+    if (v == null || limpiar(v) === '') return null;
+    const n = Number(String(v).replace(',', '.'));
+    if (!Number.isFinite(n) || n < min || n > max || (entero && !Number.isInteger(n))) return null;
+    return n;
+  }
   function construirFerreteria(f, id) {
     const reg = { id: recortar('id', id) };
     CAMPOS.forEach(c => { reg[c] = recortar(c, f[c]); });
     const c = validarCoordenadas(f.lat, f.lng) || { lat: null, lng: null };
     reg.lat = c.lat;
     reg.lng = c.lng;
+    reg.tipo = tiene(TIPOS, f.tipo) ? f.tipo : 'ferreteria';
+    TEXTOS_EXTRA.forEach(k => { reg[k] = recortar(k, f[k]); });
+    const cat = limpiar(f.categoria).toUpperCase();
+    reg.categoria = CATEGORIAS.includes(cat) ? cat : '';
+    reg.clienteSocoda = siNo(f.clienteSocoda);
+    reg.calificacion = numeroEntre(f.calificacion, 0, 5, false);
+    reg.resenas = numeroEntre(f.resenas, 0, 1e8, true);
+    reg.descartada = tiene(DESCARTES, f.descartada) ? f.descartada : '';
+    reg.descartadaPor = recortar('vendedor', f.descartadaPor);
+    reg.descartadaFecha = /^\d{4}-\d{2}-\d{2}$/.test(limpiar(f.descartadaFecha)) ? limpiar(f.descartadaFecha) : '';
     return reg;
   }
+  // Nueva (sin id) o editar: lo que no viene en f se conserva de la guardada.
   function guardarFerreteria(f) {
     const datos = leer();
     const id = f.id || nuevoId('f_');
-    const reg = construirFerreteria(f, id);
-    if (!reg.nombre) throw new Error('El nombre es obligatorio');
     const i = datos.ferreterias.findIndex(x => x.id === id);
+    const reg = construirFerreteria(i >= 0 ? Object.assign({}, datos.ferreterias[i], f) : f, id);
+    if (!reg.nombre) throw new Error('El nombre es obligatorio');
     if (i >= 0) datos.ferreterias[i] = reg; else datos.ferreterias.push(reg);
     encolar(datos, 'ferreterias', reg);
     guardar(datos);
@@ -151,6 +195,32 @@
     if (!f) throw new Error('La ferretería no existe');
     f.lat = c.lat;
     f.lng = c.lng;
+    encolar(datos, 'ferreterias', f);
+    guardar(datos);
+    return f;
+  }
+
+  // El vendedor fue y no existe, cerró o no aplica. Queda marcada (con quién y cuándo),
+  // sale de Hoy, del mapa y de los pendientes, y conserva su historial de visitas.
+  function descartarFerreteria(id, motivo) {
+    if (!tiene(DESCARTES, motivo)) throw new Error('Elige por qué la descartas');
+    const datos = leer();
+    const f = datos.ferreterias.find(x => x.id === id);
+    if (!f) throw new Error('La ferretería no existe');
+    f.descartada = motivo;
+    f.descartadaPor = recortar('vendedor', datos.vendedorActual);
+    f.descartadaFecha = hoyISO();
+    encolar(datos, 'ferreterias', f);
+    guardar(datos);
+    return f;
+  }
+  function reactivarFerreteria(id) {
+    const datos = leer();
+    const f = datos.ferreterias.find(x => x.id === id);
+    if (!f) throw new Error('La ferretería no existe');
+    f.descartada = '';
+    f.descartadaPor = '';
+    f.descartadaFecha = '';
     encolar(datos, 'ferreterias', f);
     guardar(datos);
     return f;
@@ -181,11 +251,12 @@
   function ordenVisitas(a, b) {
     return b.fecha.localeCompare(a.fecha) || (b.creada || '').localeCompare(a.creada || '');
   }
-  function estadoDe(ultima) {
-    if (!ultima) return 'nueva';
-    if (ultima.resultado === 'compro') return 'cliente';
-    if (ultima.resultado === 'pidio_visita') return 'seguimiento';
-    return 'visitada';
+  // Descartada manda. Ya cliente de SOCODA antes de la app = cliente, salvo que haya pedido visita.
+  function estadoDe(ultima, f) {
+    if (f && f.descartada) return 'descartada';
+    if (ultima && ultima.resultado === 'pidio_visita') return 'seguimiento';
+    if ((ultima && ultima.resultado === 'compro') || (f && f.clienteSocoda === true)) return 'cliente';
+    return ultima ? 'visitada' : 'nueva';
   }
   // Ferreterías enriquecidas con visitas, última visita, estado y días sin visita.
   function censoDe(datos) {
@@ -195,7 +266,7 @@
       return Object.assign({}, f, {
         visitas: visitas,
         ultima: ultima,
-        estado: estadoDe(ultima),
+        estado: estadoDe(ultima, f),
         diasSinVisita: diasDesde(ultima ? ultima.fecha : null)
       });
     });
@@ -204,7 +275,8 @@
 
   // Pendientes de hoy: pidió visita después, o sin visita hace más de 30 días (incluye nunca visitadas).
   function pendientesHoy() {
-    return censo().filter(f => f.estado === 'seguimiento' || f.diasSinVisita > DIAS_SIN_VISITA);
+    // Las descartadas nunca son pendientes.
+    return censo().filter(f => f.estado !== 'descartada' && (f.estado === 'seguimiento' || f.diasSinVisita > DIAS_SIN_VISITA));
   }
 
   function resumenPor(visitas, claveDe) {
@@ -244,7 +316,7 @@
       porZona: resumenPor(visitas, v => zonaDe.get(v.ferreteriaId) || 'Sin zona'),
       porVendedor: resumenPor(visitas, v => v.vendedor || 'Sin nombre'),
       clientesNuevos: clientesNuevos,
-      sinVisitar: censoDe(datos).filter(f => f.diasSinVisita > DIAS_SIN_VISITA)
+      sinVisitar: censoDe(datos).filter(f => f.estado !== 'descartada' && f.diasSinVisita > DIAS_SIN_VISITA)
     };
   }
 
@@ -258,19 +330,34 @@
 
   // ---------- CSV ----------
   // Columnas reconocidas: id (opcional), nombre, direccion, barrio, municipio, telefono, zona,
-  // y opcionalmente lat y lng (punto o coma decimal).
+  // y opcionalmente lat y lng (punto o coma decimal) y las de COLUMNAS_EXTRA (las mismas
+  // que genera api/scripts/buscar-google.mjs y lee app/src/nucleo/csv.js).
   // Separador ; o , (se detecta solo). Exporta con ; para que Excel en español lo abra bien.
+
+  // [columna del CSV, campo de la ferretería]
+  const COLUMNAS_EXTRA = [
+    ['tipo', 'tipo'], ['encargado', 'encargado'], ['whatsapp', 'whatsapp'], ['correo', 'correo'],
+    ['categoria', 'categoria'], ['cliente_socoda', 'clienteSocoda'], ['vendedor_asignado', 'vendedorAsignado'],
+    ['google_place_id', 'googlePlaceId'], ['web', 'web'], ['horario', 'horario'],
+    ['calificacion', 'calificacion'], ['resenas', 'resenas'],
+    ['descartada', 'descartada'], ['descartada_por', 'descartadaPor'], ['descartada_fecha', 'descartadaFecha']
+  ];
+  const COLUMNAS = CAMPOS.map(c => [c, c]).concat(COLUMNAS_EXTRA);
+  // Coordenadas y calificación con coma decimal, como las escribe y lee Excel en español.
+  function textoCelda(k, v) {
+    if (v == null) return '';
+    if (k === 'clienteSocoda') return v ? 'si' : 'no';
+    if (k === 'lat' || k === 'lng' || k === 'calificacion') return String(v).replace('.', ',');
+    return v;
+  }
   function celdaCSV(v) {
     const s = String(v == null ? '' : v);
     return /[";\r\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
   }
   function exportarCSV() {
-    const cabecera = ['id'].concat(CAMPOS, ['lat', 'lng']);
-    const filas = [cabecera.join(';')].concat(
-      // Coordenadas con coma decimal, como las escribe y lee Excel en español.
-      leer().ferreterias.map(f => cabecera.map(c =>
-        celdaCSV((c === 'lat' || c === 'lng') && f[c] != null ? String(f[c]).replace('.', ',') : f[c])
-      ).join(';'))
+    const cols = [['id', 'id']].concat(CAMPOS.map(c => [c, c]), [['lat', 'lat'], ['lng', 'lng']], COLUMNAS_EXTRA);
+    const filas = [cols.map(c => c[0]).join(';')].concat(
+      leer().ferreterias.map(f => cols.map(([, k]) => celdaCSV(textoCelda(k, f[k]))).join(';'))
     );
     return '﻿' + filas.join('\r\n');
   }
@@ -309,7 +396,7 @@
     if (filas.length < 2) throw new Error('El archivo no tiene filas de datos');
     const enc = filas[0].map(h => normaliza(h).replace(/ /g, '_'));
     if (!enc.includes('nombre')) throw new Error('Falta la columna "nombre"');
-    const campos = CAMPOS.filter(c => enc.includes(c));
+    const presentes = COLUMNAS.filter(([col]) => enc.includes(col));
     const conUbicacion = enc.includes('lat') && enc.includes('lng');
     const datos = leer();
     const cont = { nuevas: 0, actualizadas: 0, omitidas: 0 };
@@ -321,14 +408,18 @@
       const existente = (r.id && datos.ferreterias.find(x => x.id === r.id)) ||
                         datos.ferreterias.find(x => claveDup(x) === claveDup(r));
       if (existente) {
-        campos.forEach(c => { existente[c] = recortar(c, r[c]); });
+        const cambios = {};
+        presentes.forEach(([col, k]) => { cambios[k] = r[col]; });
         // Una celda de ubicación vacía no borra la que ya estaba guardada.
         const c = conUbicacion ? validarCoordenadas(r.lat, r.lng) : null;
-        if (c && c.lat != null) { existente.lat = c.lat; existente.lng = c.lng; }
+        const ubic = c && c.lat != null ? c : { lat: existente.lat, lng: existente.lng };
+        Object.assign(existente, construirFerreteria(Object.assign({}, existente, cambios, ubic), existente.id));
         encolar(datos, 'ferreterias', existente);
         cont.actualizadas++;
       } else {
-        const nueva = construirFerreteria(r, r.id || nuevoId('f_'));
+        const campos = {};
+        presentes.forEach(([col, k]) => { campos[k] = r[col]; });
+        const nueva = construirFerreteria(Object.assign(campos, { lat: r.lat, lng: r.lng }), r.id || nuevoId('f_'));
         datos.ferreterias.push(nueva);
         encolar(datos, 'ferreterias', nueva);
         cont.nuevas++;
@@ -471,6 +562,11 @@
     RESULTADOS: RESULTADOS,
     LINEAS: LINEAS,
     ESTADOS: ESTADOS,
+    TIPOS: TIPOS,
+    CATEGORIAS: CATEGORIAS,
+    DESCARTES: DESCARTES,
+    descartarFerreteria: descartarFerreteria,
+    reactivarFerreteria: reactivarFerreteria,
     LIMITES: LIMITES,
     DIAS_SIN_VISITA: DIAS_SIN_VISITA,
     hoyISO: hoyISO,

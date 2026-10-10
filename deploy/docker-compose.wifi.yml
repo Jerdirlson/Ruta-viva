@@ -1,0 +1,10 @@
+# Solo para probar desde celulares en la misma red Wi-Fi (Expo Go): publica el API
+# además en la IP del PC dentro de la red de la casa. La base sigue sin puertos y el
+# API exige la clave del equipo. No usar en una red pública.
+#
+#   IP_WIFI=192.168.1.23 docker compose -f docker-compose.yml -f docker-compose.local.yml -f docker-compose.wifi.yml up -d
+#   cd ../app && EXPO_PUBLIC_API_URL=http://192.168.1.23:8080 npx expo start --clear
+services:
+  api:
+    ports:
+      - "${IP_WIFI:?Falta IP_WIFI, la IP del PC en la red Wi-Fi}:${PUERTO_LOCAL:-8080}:3000"

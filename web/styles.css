@@ -270,6 +270,11 @@ textarea { min-height: 72px; resize: vertical; }
 .chip-visitada { background: var(--info-fondo); color: var(--grafito); }
 .chip-seguimiento { background: var(--aviso-fondo); color: var(--aviso-texto); }
 .chip-cliente { background: var(--ok-fondo); color: var(--ok-texto); }
+.chip-descartada { background: var(--grafito); color: var(--grafito-texto); }
+.aviso-descartada { display: grid; gap: 8px; padding: 14px; border-radius: 14px; background: var(--grafito); color: var(--grafito-texto); }
+.descartar { display: grid; gap: 8px; }
+.descartar > summary { list-style: none; }
+.descartar > summary::-webkit-details-marker { display: none; }
 
 /* Ficha */
 .ficha { display: grid; gap: 12px; }

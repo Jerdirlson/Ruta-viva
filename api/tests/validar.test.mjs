@@ -10,7 +10,26 @@ const visita = (extra = {}) => Object.assign({
 
 test('ferretería válida se normaliza (recorta espacios, completa vacíos)', () => {
   const r = validarFerreteria({ id: ' f1 ', nombre: '  Ferre  ', municipio: 'Girón' });
-  assert.deepEqual(r.valor, { id: 'f1', nombre: 'Ferre', direccion: '', barrio: '', municipio: 'Girón', telefono: '', zona: '', lat: null, lng: null });
+  assert.deepEqual(r.valor, {
+    id: 'f1', nombre: 'Ferre', direccion: '', barrio: '', municipio: 'Girón', telefono: '', zona: '', lat: null, lng: null,
+    // Campos de la migración 003 que no vinieron: null = el servidor conserva lo guardado.
+    encargado: null, whatsapp: null, correo: null, vendedorAsignado: null, googlePlaceId: null, web: null, horario: null,
+    tipo: null, categoria: null, clienteSocoda: null, calificacion: null, resenas: null,
+    descartada: null, descartadaPor: null, descartadaFecha: null
+  });
+});
+
+test('campos de contacto y comerciales: válidos pasan, inválidos se rechazan', () => {
+  const base = { id: 'f1', nombre: 'Ferre' };
+  const ok = validarFerreteria(Object.assign({}, base, {
+    encargado: ' Don Pedro ', categoria: 'A', tipo: 'materiales', clienteSocoda: false, calificacion: '4.5', resenas: 3
+  })).valor;
+  assert.deepEqual([ok.encargado, ok.categoria, ok.tipo, ok.clienteSocoda, ok.calificacion, ok.resenas],
+    ['Don Pedro', 'A', 'materiales', false, 4.5, 3]);
+  assert.match(validarFerreteria(Object.assign({}, base, { categoria: 'a' })).error, /Categoría/);
+  assert.match(validarFerreteria(Object.assign({}, base, { clienteSocoda: 'si' })).error, /clienteSocoda/);
+  assert.match(validarFerreteria(Object.assign({}, base, { resenas: 1.5 })).error, /Reseñas/);
+  assert.match(validarFerreteria(Object.assign({}, base, { correo: 'x'.repeat(LIMITES.correo + 1) })).error, /correo/);
 });
 
 test('ferretería sin nombre o sin id se rechaza', () => {
@@ -66,4 +85,14 @@ test('ubicación: opcional, completa y dentro de rango', async () => {
   assert.match(validarCoordenadas(91, -73).error, /rango/);
   assert.match(validarFerreteria({ id: 'f1', nombre: 'X', lat: 7.1 }).error, /incompleta/);
   assert.equal(validarFerreteria({ id: 'f1', nombre: 'X', lat: 7.1, lng: -73.1 }).valor.lng, -73.1);
+});
+
+test('descartar: motivo, quién y fecha válidos; reactivar con vacíos', () => {
+  const base = { id: 'f1', nombre: 'Ferre' };
+  const ok = validarFerreteria(Object.assign({}, base, { descartada: 'cerro', descartadaPor: ' Ana ', descartadaFecha: '2026-10-10' })).valor;
+  assert.deepEqual([ok.descartada, ok.descartadaPor, ok.descartadaFecha], ['cerro', 'Ana', '2026-10-10']);
+  const activa = validarFerreteria(Object.assign({}, base, { descartada: '', descartadaPor: '', descartadaFecha: '' })).valor;
+  assert.deepEqual([activa.descartada, activa.descartadaPor, activa.descartadaFecha], ['', '', '']);
+  assert.match(validarFerreteria(Object.assign({}, base, { descartada: 'borrada' })).error, /descarte/);
+  assert.match(validarFerreteria(Object.assign({}, base, { descartadaFecha: '2026-13-01' })).error, /Fecha de descarte/);
 });

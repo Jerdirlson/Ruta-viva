@@ -1,8 +1,8 @@
 // Hoy: visitas pendientes por zona, en lista o mapa, con "Cerca de mí" y ruta en Google Maps.
 import React, { useMemo, useState } from 'react';
-import { FlatList, ScrollView, StyleSheet, Text, View } from 'react-native';
-import { color, letra } from '../tema';
-import { pendientesDe, ordenZona } from '../nucleo/reglas';
+import { FlatList, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { color, letra, radio, TOQUE } from '../tema';
+import { pendientesDe, ordenZona, grupoDe, colorPin } from '../nucleo/reglas';
 import { ordenarPorCercania, paradasCercanas, urlRuta, PARADAS_RUTA } from '../nucleo/geo';
 import { useApp } from '../estado/AppContext';
 import { AvisoLinea, Boton, Opcion, abrir } from '../componentes/ui';
@@ -14,15 +14,18 @@ export default function HoyScreen({ navigation }) {
   const [zona, setZona] = useState('');
   const [vista, setVista] = useState('lista');
   const [seleccionada, setSeleccionada] = useState(null);
+  // Varias ferreterías en el mismo sitio (mismo edificio): se elige de una lista.
+  const [varias, setVarias] = useState(null);
+  const elegir = f => { setVarias(null); setSeleccionada(f); };
 
   const todas = useMemo(() => pendientesDe(censo).sort(ordenZona), [censo]);
   const porZona = useMemo(() => {
     const m = new Map();
-    todas.forEach(f => m.set(f.zona || '', (m.get(f.zona || '') || 0) + 1));
+    todas.forEach(f => m.set(grupoDe(f), (m.get(grupoDe(f)) || 0) + 1));
     return m;
   }, [todas]);
   const zonaActiva = zona && porZona.has(zona) ? zona : '';
-  const delaZona = todas.filter(f => !zonaActiva || f.zona === zonaActiva);
+  const delaZona = todas.filter(f => !zonaActiva || grupoDe(f) === zonaActiva);
   const pendientes = posicion ? ordenarPorCercania(delaZona, posicion) : delaZona;
   const cercanas = posicion ? paradasCercanas(pendientes, posicion) : [];
   const ruta = cercanas.length ? cercanas : pendientes;
@@ -32,7 +35,7 @@ export default function HoyScreen({ navigation }) {
   const filas = [];
   let zonaAnterior = null;
   pendientes.forEach(f => {
-    const z = f.zona || 'Sin zona';
+    const z = grupoDe(f);
     if (!posicion && !zonaActiva && z !== zonaAnterior) {
       filas.push({ clave: 'g-' + z, grupo: z });
       zonaAnterior = z;
@@ -56,10 +59,10 @@ export default function HoyScreen({ navigation }) {
 
       <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={s.zonas}>
         <Opcion chica titulo={'Todas ' + todas.length} activa={!zonaActiva} onPress={() => setZona('')} testID="zona-todas" />
-        {[...porZona.keys()].map(z => (
-          <Opcion key={z || '-'} chica titulo={(z || 'Sin zona') + ' ' + porZona.get(z)} activa={zonaActiva === z}
-            onPress={() => setZona(z)} testID={'zona-' + (z || 'sin')} />
-        ))}
+        {porZona.size > 1 ? [...porZona.keys()].map(z => (
+          <Opcion key={z} chica titulo={z + ' ' + porZona.get(z)} activa={zonaActiva === z}
+            onPress={() => setZona(z)} testID={'zona-' + z} />
+        )) : null}
       </ScrollView>
 
       <View style={s.controles}>
@@ -81,7 +84,7 @@ export default function HoyScreen({ navigation }) {
   );
 
   if (vista === 'mapa') {
-    const delMapa = censo.filter(f => !zonaActiva || f.zona === zonaActiva);
+    const delMapa = censo.filter(f => f.estado !== 'descartada' && (!zonaActiva || grupoDe(f) === zonaActiva));
     const sinUbicar = delMapa.filter(f => f.lat == null).length;
     return (
       <View style={s.pantalla}>
@@ -93,8 +96,27 @@ export default function HoyScreen({ navigation }) {
           {sinUbicar ? <Text style={s.textoLeyenda}>{'· ' + sinUbicar + ' sin ubicar'}</Text> : null}
         </View>
         <View style={s.mapa}>
-          <MapaHoy lista={delMapa} posicion={posicion} onSeleccionar={setSeleccionada} />
+          <MapaHoy lista={delMapa} posicion={posicion} elegidaId={seleccionada && seleccionada.id}
+            onSeleccionar={elegir} onElegirVarias={lista => { setSeleccionada(null); setVarias(lista); }} />
         </View>
+        {varias ? (
+          <View style={[s.seleccion, s.varias]}>
+            <Text style={s.variasTitulo}>{varias.length + ' ferreterías en este mismo sitio'}</Text>
+            <ScrollView style={{ maxHeight: 260 }}>
+              {varias.map(f => (
+                <Pressable key={f.id} onPress={() => elegir(f)} accessibilityRole="button" testID={'varias-' + f.id}
+                  style={({ pressed }) => [s.variasFila, pressed && { backgroundColor: color.superficie }]}>
+                  <View style={[s.punto, { backgroundColor: color.pin[colorPin(f)] }]} />
+                  <View style={{ flex: 1 }}>
+                    <Text style={s.variasNombre} numberOfLines={2}>{f.nombre}</Text>
+                    {f.direccion ? <Text style={s.textoLeyenda} numberOfLines={1}>{f.direccion}</Text> : null}
+                  </View>
+                </Pressable>
+              ))}
+            </ScrollView>
+            <Boton titulo="Cerrar" onPress={() => setVarias(null)} />
+          </View>
+        ) : null}
         {seleccionada ? (
           <View style={s.seleccion}>
             <TarjetaFerreteria f={censo.find(x => x.id === seleccionada.id) || seleccionada} />
@@ -139,5 +161,10 @@ const s = StyleSheet.create({
   punto: { width: 14, height: 14, borderRadius: 7, borderWidth: 2, borderColor: color.fondo },
   textoLeyenda: { fontSize: letra.mini, color: color.suave },
   mapa: { flex: 1, minHeight: 280, marginHorizontal: 16, marginBottom: 16, borderRadius: 14, overflow: 'hidden', borderWidth: 1, borderColor: color.linea },
-  seleccion: { position: 'absolute', left: 16, right: 16, bottom: 24 }
+  seleccion: { position: 'absolute', left: 16, right: 16, bottom: 12 },
+  varias: { gap: 8, padding: 12, borderRadius: radio.normal, backgroundColor: color.fondo, borderWidth: 1, borderColor: color.linea,
+    shadowColor: color.sombra, shadowOpacity: 0.15, shadowRadius: 10, shadowOffset: { width: 0, height: 4 }, elevation: 6 },
+  variasTitulo: { fontSize: letra.normal, fontWeight: '800', color: color.texto },
+  variasFila: { minHeight: TOQUE, flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 8, paddingHorizontal: 4,
+    borderBottomWidth: 1, borderBottomColor: color.linea }
 });

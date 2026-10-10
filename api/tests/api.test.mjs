@@ -169,3 +169,66 @@ test('la política de contenido permite solo las teselas de OpenStreetMap', { sk
   assert.match(csp, /img-src 'self' data: https:\/\/tile\.openstreetmap\.org;/);
   assert.match(csp, /default-src 'self'/);
 });
+
+test('guarda contacto, datos comerciales y de Google', { skip: omitir }, async () => {
+  const extra = {
+    tipo: 'materiales', encargado: 'Don Pedro', whatsapp: '3001234567', correo: 'ventas@ejemplo.co',
+    categoria: 'A', clienteSocoda: true, vendedorAsignado: 'Ana', googlePlaceId: 'ChIJabc',
+    web: 'https://ejemplo.co', horario: 'lunes: 8:00–18:00', calificacion: 4.5, resenas: 120
+  };
+  const j = await (await sync({ ferreterias: [ferre('e1', extra)] })).json();
+  assert.deepEqual(j.rechazadas, []);
+  const f = j.ferreterias.find(x => x.id === 'e1');
+  for (const [k, v] of Object.entries(extra)) assert.deepEqual(f[k], v, k);
+});
+
+test('una ferretería sin los campos nuevos los recibe con valores por defecto', { skip: omitir }, async () => {
+  const f = (await (await sync({ ferreterias: [ferre('e2')] })).json()).ferreterias.find(x => x.id === 'e2');
+  assert.equal(f.tipo, 'ferreteria');
+  assert.equal(f.encargado, '');
+  assert.equal(f.clienteSocoda, false);
+  assert.equal(f.calificacion, null);
+});
+
+// Un celular con la versión vieja de la app reenvía la ferretería sin los campos nuevos.
+test('un envío sin los campos nuevos no borra los guardados', { skip: omitir }, async () => {
+  await sync({ ferreterias: [ferre('e3', { encargado: 'Doña Marta', categoria: 'B', clienteSocoda: true, resenas: 7 })] });
+  const j = await (await sync({ ferreterias: [ferre('e3', { telefono: '3115550000' })] })).json();
+  const f = j.ferreterias.find(x => x.id === 'e3');
+  assert.equal(f.telefono, '3115550000');
+  assert.equal(f.encargado, 'Doña Marta');
+  assert.equal(f.categoria, 'B');
+  assert.equal(f.clienteSocoda, true);
+  assert.equal(f.resenas, 7);
+  // Pero sí se pueden vaciar a propósito.
+  const k = (await (await sync({ ferreterias: [ferre('e3', { encargado: '', categoria: '', clienteSocoda: false })] })).json())
+    .ferreterias.find(x => x.id === 'e3');
+  assert.deepEqual([k.encargado, k.categoria, k.clienteSocoda], ['', '', false]);
+});
+
+test('campos nuevos inválidos se rechazan con motivo', { skip: omitir }, async () => {
+  const j = await (await sync({ ferreterias: [
+    ferre('e4', { categoria: 'Z' }), ferre('e5', { tipo: 'panaderia' }),
+    ferre('e6', { calificacion: 9 }), ferre('e7', { encargado: 'x'.repeat(81) })
+  ] })).json();
+  const motivos = Object.fromEntries(j.rechazadas.map(r => [r.id, r.motivo]));
+  assert.match(motivos.e4, /Categoría/);
+  assert.match(motivos.e5, /Tipo/);
+  assert.match(motivos.e6, /Calificación/);
+  assert.match(motivos.e7, /encargado/);
+});
+
+test('descartar una ferretería, conservar el descarte y reactivarla', { skip: omitir }, async () => {
+  await sync({ ferreterias: [ferre('x1')], visitas: [visita('vx1', 'x1')] });
+  let f = (await (await sync({ ferreterias: [ferre('x1', { descartada: 'no_existe', descartadaPor: 'Ana', descartadaFecha: '2026-10-10' })] })).json())
+    .ferreterias.find(x => x.id === 'x1');
+  assert.deepEqual([f.descartada, f.descartadaPor, f.descartadaFecha], ['no_existe', 'Ana', '2026-10-10']);
+  // Un celular con la versión vieja no la reactiva sin querer.
+  f = (await (await sync({ ferreterias: [ferre('x1', { telefono: '3001112233' })] })).json()).ferreterias.find(x => x.id === 'x1');
+  assert.equal(f.descartada, 'no_existe');
+  // Reactivar es a propósito, con vacíos. Las visitas siguen ahí.
+  const j = await (await sync({ ferreterias: [ferre('x1', { descartada: '', descartadaPor: '', descartadaFecha: '' })] })).json();
+  f = j.ferreterias.find(x => x.id === 'x1');
+  assert.deepEqual([f.descartada, f.descartadaPor, f.descartadaFecha], ['', '', '']);
+  assert.ok(j.visitas.some(v => v.id === 'vx1'));
+});

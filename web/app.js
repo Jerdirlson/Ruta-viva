@@ -101,6 +101,13 @@
       if (p.precision > PRECISION_MAX_M) {
         return toast('Precisión de ±' + Math.round(p.precision) + ' m, muy baja. Párate en la entrada, a cielo abierto, e intenta de nuevo.');
       }
+      // Más de 300 m de la guardada: lo más probable es que no estés en la ferretería.
+      const f = DB.censo().find(x => x.id === id);
+      const lejos = f && f.lat != null ? distanciaM(p, f) : 0;
+      if (lejos > 300 && !confirm('¿Estás en ' + f.nombre + '?\n\nTu GPS está a ' + textoDistancia(lejos) +
+          ' de donde estaba guardada. Cámbiala solo si estás parado en la entrada de la ferretería.')) {
+        return toast('No se cambió la ubicación');
+      }
       DB.guardarUbicacion(id, p.lat, p.lng);
       ui.posicion = p;
       toast('Ubicación guardada (±' + Math.round(p.precision) + ' m)');
@@ -113,6 +120,12 @@
   function urlTel(f) {
     const n = String(f.telefono || '').replace(/[^\d+]/g, '');
     return n ? 'tel:' + n : '';
+  }
+  // Mismo criterio que app/src/nucleo/geo.js: celular colombiano, con o sin 57.
+  function urlWhatsapp(numero) {
+    let d = String(numero || '').replace(/\D/g, '');
+    if (d.length === 10 && d[0] === '3') d = '57' + d;
+    return /^573\d{9}$/.test(d) ? 'https://wa.me/' + d : '';
   }
   function chip(estado) {
     return '<span class="chip chip-' + estado + '">' + DB.ESTADOS[estado] + '</span>';
@@ -259,7 +272,7 @@
 
     if (ui.modoHoy === 'mapa') {
       // El mapa muestra todo el censo de la zona: también clientes, para ubicarse.
-      const delMapa = DB.censo().filter(f => !ui.filtros.zonaHoy || f.zona === ui.filtros.zonaHoy);
+      const delMapa = DB.censo().filter(f => f.estado !== 'descartada' && (!ui.filtros.zonaHoy || f.zona === ui.filtros.zonaHoy));
       const sinUbicar = delMapa.filter(f => f.lat == null).length;
       ultimoMapa = delMapa;
       html += '<div id="mapa" class="mapa" role="region" aria-label="Mapa de ferreterías"></div>' +
@@ -319,7 +332,7 @@
     const filtradas = DB.censo().filter(f =>
       (!ui.filtros.zona || f.zona === ui.filtros.zona) &&
       (!ui.filtros.municipio || f.municipio === ui.filtros.municipio) &&
-      (!ui.filtros.estado || f.estado === ui.filtros.estado) &&
+      (ui.filtros.estado ? f.estado === ui.filtros.estado : f.estado !== 'descartada') &&
       (!q || normaliza(f.nombre + ' ' + f.barrio).includes(q))
     ).sort(ordenZona);
     document.getElementById('conteo').textContent = filtradas.length + ' ferretería(s)';
@@ -335,21 +348,49 @@
         '<button class="btn btn-sec" data-ir="censo">Volver al censo</button>';
     }
     const tel = urlTel(f);
+    const wa = urlWhatsapp(f.whatsapp) || urlWhatsapp(f.telefono);
     const fila = (t, v) => '<div><dt>' + t + '</dt><dd>' + (v ? esc(v) : '—') + '</dd></div>';
+    const google = f.calificacion != null
+      ? String(f.calificacion).replace('.', ',') + ' ★ (' + (f.resenas || 0) + ' reseñas)' : '';
+    const web = /^https?:\/\//i.test(f.web || '') ? f.web : '';
     return '<button class="enlace" data-ir="censo">← Volver al censo</button>' +
-      '<section class="ficha"><h2>' + esc(f.nombre) + '</h2><p>' + chip(f.estado) + '</p>' +
+      '<section class="ficha"><h2>' + esc(f.nombre) + '</h2><p>' + chip(f.estado) +
+        (f.tipo === 'materiales' ? ' <span class="chip">' + DB.TIPOS.materiales + '</span>' : '') +
+        (f.categoria ? ' <span class="chip">Categoría ' + esc(f.categoria) + '</span>' : '') + '</p>' +
+        (f.descartada
+          ? '<div class="aviso-descartada"><strong>Descartada: ' + esc(DB.DESCARTES[f.descartada] || f.descartada) + '</strong>' +
+            '<span>' + esc([f.descartadaPor ? 'por ' + f.descartadaPor : '', f.descartadaFecha ? 'el ' + fechaCorta(f.descartadaFecha) : '']
+              .filter(Boolean).join(' ') || 'No sale en Hoy, en el mapa ni en los pendientes.') + '</span>' +
+            '<button class="btn btn-sec" data-accion="reactivar" data-id="' + esc(f.id) + '">Volver a activar</button></div>'
+          : '') +
         '<dl>' + fila('Dirección', f.direccion) + fila('Barrio', f.barrio) +
           fila('Municipio', f.municipio) + fila('Zona', f.zona) + fila('Teléfono', f.telefono) +
           '<div><dt>Ubicación</dt><dd>' + (f.lat != null
             ? 'Guardada' + (distanciaA(f) != null ? ' · a ' + textoDistancia(distanciaA(f)) + ' de ti' : '')
-            : 'Sin ubicar') + '</dd></div></dl>' +
+            : 'Sin ubicar') + '</dd></div>' +
+          fila('Encargado', f.encargado) + fila('WhatsApp', f.whatsapp) +
+          (f.correo ? fila('Correo', f.correo) : '') +
+          fila('Cliente de SOCODA', f.clienteSocoda ? 'Sí' : 'No') + fila('Vendedor asignado', f.vendedorAsignado) +
+          (f.horario ? '<div><dt>Horario (Google)</dt><dd>' + f.horario.split(' | ').map(esc).join('<br>') + '</dd></div>' : '') +
+          (google ? fila('Calificación en Google', google) : '') + '</dl>' +
         '<button class="btn btn-ancho" data-accion="ubicar" data-id="' + esc(f.id) + '">' +
           (f.lat != null ? 'Actualizar ubicación aquí' : 'Guardar ubicación aquí') + '</button>' +
         '<div class="acciones">' +
           '<a class="btn btn-sec" href="' + urlMaps(f) + '" target="_blank" rel="noopener">Abrir en Maps</a>' +
           (tel ? '<a class="btn btn-sec" href="' + tel + '">Llamar</a>' : '') +
+          (wa ? '<a class="btn btn-sec" href="' + wa + '" target="_blank" rel="noopener">WhatsApp</a>' : '') +
           '<button class="btn btn-pri" data-visita="' + esc(f.id) + '">Registrar visita</button>' +
+        '</div>' +
+        '<div class="acciones">' +
+          '<button class="btn btn-sec" data-editar="' + esc(f.id) + '">Editar datos</button>' +
+          (web ? '<a class="btn btn-sec" href="' + esc(web) + '" target="_blank" rel="noopener">Página web</a>' : '') +
         '</div></section>' +
+      (!f.descartada
+        ? '<details class="descartar"><summary class="btn btn-sec btn-ancho">¿No existe o cerró?</summary>' +
+          '<p class="ayuda">Sale de Hoy, del mapa y de los pendientes. No se borra: se puede volver a activar.</p>' +
+          Object.keys(DB.DESCARTES).map(k => '<button class="btn btn-ancho" data-accion="descartar" data-id="' + esc(f.id) +
+            '" data-motivo="' + k + '">' + esc(DB.DESCARTES[k]) + '</button>').join('') + '</details>'
+        : '') +
       '<h3>Historial de visitas</h3>' +
       (f.visitas.length ? f.visitas.map(historial).join('') : '<p class="vacio">Sin visitas registradas.</p>');
   }
@@ -581,14 +622,29 @@
     dlg.showModal();
   }
 
-  function abrirNueva() {
+  // Sin id: nueva ferretería. Con id: editar la existente con el mismo formulario.
+  function abrirNueva(id) {
     const form = document.getElementById('form-nueva');
     const todas = DB.censo();
+    const f = id ? todas.find(x => x.id === id) : null;
+    if (id && !f) return toast('No encontramos esa ferretería');
     form.reset();
-    document.getElementById('lista-municipios').innerHTML =
-      unicos(todas.map(f => f.municipio)).map(m => '<option value="' + esc(m) + '">').join('');
-    document.getElementById('lista-zonas').innerHTML =
-      unicos(todas.map(f => f.zona)).map(z => '<option value="' + esc(z) + '">').join('');
+    const lista = (idLista, valores) => {
+      document.getElementById(idLista).innerHTML = unicos(valores).map(v => '<option value="' + esc(v) + '">').join('');
+    };
+    lista('lista-municipios', todas.map(x => x.municipio));
+    lista('lista-zonas', todas.map(x => x.zona));
+    lista('lista-vendedores', todas.map(x => x.vendedorAsignado)
+      .concat(todas.flatMap(x => x.visitas.map(v => v.vendedor)), [DB.obtenerVendedor()]));
+    form.id_ferreteria.value = f ? f.id : '';
+    if (f) {
+      ['nombre', 'direccion', 'barrio', 'municipio', 'telefono', 'zona', 'tipo', 'encargado', 'whatsapp',
+        'correo', 'categoria'].forEach(k => { form[k].value = f[k] || ''; });
+      form.vendedor_asignado.value = f.vendedorAsignado || '';
+      form.cliente_socoda.value = f.clienteSocoda ? 'si' : 'no';
+    }
+    document.getElementById('dlg-nueva-titulo').textContent = f ? 'Editar ferretería' : 'Nueva ferretería';
+    form.querySelector('.hoja-pie .btn').textContent = f ? 'Guardar cambios' : 'Guardar ferretería';
     document.getElementById('dlg-nueva').showModal();
   }
 
@@ -597,6 +653,21 @@
     if (nombre === 'sync') return sincronizarAhora(true);
     if (nombre === 'cerca') return ubicarme();
     if (nombre === 'ubicar') return guardarUbicacionAqui(boton.dataset.id);
+    if (nombre === 'descartar' || nombre === 'reactivar') {
+      try {
+        if (nombre === 'descartar') {
+          DB.descartarFerreteria(boton.dataset.id, boton.dataset.motivo);
+          toast('Ferretería descartada: ' + DB.DESCARTES[boton.dataset.motivo]);
+        } else {
+          DB.reactivarFerreteria(boton.dataset.id);
+          toast('Ferretería activa de nuevo');
+        }
+        programarSync();
+        return render();
+      } catch (e) {
+        return toast(e.message || 'No se pudo guardar');
+      }
+    }
     try {
       const hoy = DB.hoyISO();
       if (nombre === 'csv') descargar('censo_socoda_' + hoy + '.csv', DB.exportarCSV(), 'text/csv;charset=utf-8');
@@ -611,7 +682,7 @@
     // Maps, Llamar y la ruta son enlaces: que hagan lo suyo sin abrir además la ficha.
     if (e.target.closest('a[href]')) return;
     const t = e.target.closest(
-      '[data-ir],[data-ficha],[data-visita],[data-nueva],[data-periodo],[data-accion],[data-cerrar],[data-zona-hoy],[data-modo-hoy]'
+      '[data-ir],[data-ficha],[data-visita],[data-nueva],[data-editar],[data-periodo],[data-accion],[data-cerrar],[data-zona-hoy],[data-modo-hoy]'
     );
     if (!t) return;
     if (t.hasAttribute('data-cerrar')) return t.closest('dialog').close();
@@ -625,6 +696,7 @@
     }
     if (t.hasAttribute('data-visita')) return abrirVisita(t.dataset.visita);
     if (t.hasAttribute('data-nueva')) return abrirNueva();
+    if (t.hasAttribute('data-editar')) return abrirNueva(t.dataset.editar);
     if (t.hasAttribute('data-accion')) return accion(t.dataset.accion, t);
     if (t.hasAttribute('data-ficha')) {
       ui.ferreteriaId = t.dataset.ficha;
@@ -706,16 +778,26 @@
         dlg.close();
         toast('Visita guardada');
       } else if (form.id === 'form-nueva') {
-        DB.guardarFerreteria({
+        const id = fd.get('id_ferreteria');
+        const reg = DB.guardarFerreteria({
+          id: id || undefined,
           nombre: fd.get('nombre'),
           direccion: fd.get('direccion'),
           barrio: fd.get('barrio'),
           municipio: fd.get('municipio'),
           telefono: fd.get('telefono'),
-          zona: fd.get('zona')
+          zona: fd.get('zona'),
+          tipo: fd.get('tipo'),
+          encargado: fd.get('encargado'),
+          whatsapp: fd.get('whatsapp'),
+          correo: fd.get('correo'),
+          clienteSocoda: fd.get('cliente_socoda') === 'si',
+          categoria: fd.get('categoria'),
+          vendedorAsignado: fd.get('vendedor_asignado')
         });
         document.getElementById('dlg-nueva').close();
-        toast('Ferretería agregada');
+        if (!id) { ui.ferreteriaId = reg.id; ui.vista = 'ficha'; }
+        toast(id ? 'Cambios guardados' : 'Ferretería agregada');
       }
       render();
       programarSync();

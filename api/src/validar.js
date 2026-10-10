@@ -1,8 +1,8 @@
 // Validación de lo que llega desde los teléfonos.
 //
-// Refleja EXACTAMENTE las restricciones de migrations/001_inicial.sql y los
-// límites de web/db.js (LIMITES). Si se cambia uno, se cambian los tres: si no,
-// lo que hoy se guarda en el teléfono será rechazado por el servidor mañana.
+// Refleja EXACTAMENTE las restricciones de migrations/*.sql y los límites de
+// web/db.js y app/src/nucleo/reglas.js (LIMITES). Si se cambia uno, se cambian
+// todos: si no, lo que hoy se guarda en el teléfono será rechazado mañana.
 
 export const LIMITES = {
   id: 64,
@@ -14,11 +14,26 @@ export const LIMITES = {
   zona: 40,
   vendedor: 60,
   competencia: 80,
-  notas: 500
+  notas: 500,
+  encargado: 80,
+  whatsapp: 30,
+  correo: 120,
+  vendedorAsignado: 60,
+  googlePlaceId: 255,
+  web: 300,
+  horario: 600
 };
 
 export const RESULTADOS = ['compro', 'no_compro', 'no_estaba', 'pidio_visita'];
 export const LINEAS = ['lavaplatos', 'cocina_integral', 'estufa', 'campana', 'meson'];
+export const TIPOS = ['ferreteria', 'materiales'];
+export const CATEGORIAS = ['', 'A', 'B', 'C'];
+// Migración 004: '' = activa; si no, el motivo por el que se descartó.
+export const DESCARTES = ['', 'no_existe', 'cerro', 'no_aplica'];
+
+// Campos de la migración 003. Opcionales: si no vienen (null), el servidor conserva
+// lo guardado, para que un celular con una versión vieja de la app no los borre.
+export const TEXTOS_EXTRA = ['encargado', 'whatsapp', 'correo', 'vendedorAsignado', 'googlePlaceId', 'web', 'horario'];
 
 function texto(v) {
   if (v == null) return '';
@@ -64,6 +79,47 @@ export function validarFerreteria(f) {
   const c = validarCoordenadas(f.lat, f.lng);
   if (c.error) return c;
   Object.assign(valor, c.valor);
+  const e = validarExtras(f);
+  if (e.error) return e;
+  Object.assign(valor, e.valor);
+  return { valor };
+}
+
+function validarExtras(f) {
+  const falta = v => v === undefined || v === null;
+  const valor = {};
+  for (const k of TEXTOS_EXTRA) {
+    if (falta(f[k])) { valor[k] = null; continue; }
+    const r = campo(f, k, LIMITES[k], false);
+    if (r.error) return r;
+    valor[k] = r.valor;
+  }
+  valor.tipo = falta(f.tipo) ? null : f.tipo;
+  if (valor.tipo !== null && !TIPOS.includes(valor.tipo)) return { error: 'Tipo no válido' };
+  valor.categoria = falta(f.categoria) ? null : f.categoria;
+  if (valor.categoria !== null && !CATEGORIAS.includes(valor.categoria)) return { error: 'Categoría no válida' };
+  valor.clienteSocoda = falta(f.clienteSocoda) ? null : f.clienteSocoda;
+  if (valor.clienteSocoda !== null && typeof valor.clienteSocoda !== 'boolean') return { error: 'clienteSocoda no válido' };
+  valor.descartada = falta(f.descartada) ? null : f.descartada;
+  if (valor.descartada !== null && !DESCARTES.includes(valor.descartada)) return { error: 'Motivo de descarte no válido' };
+  if (falta(f.descartadaPor)) valor.descartadaPor = null;
+  else {
+    const r = campo(f, 'descartadaPor', LIMITES.vendedor, false);
+    if (r.error) return r;
+    valor.descartadaPor = r.valor;
+  }
+  valor.descartadaFecha = falta(f.descartadaFecha) ? null : f.descartadaFecha;
+  if (valor.descartadaFecha !== null && valor.descartadaFecha !== '' && !fechaValida(valor.descartadaFecha)) {
+    return { error: 'Fecha de descarte no válida' };
+  }
+  valor.calificacion = falta(f.calificacion) ? null : Number(f.calificacion);
+  if (valor.calificacion !== null && !(valor.calificacion >= 0 && valor.calificacion <= 5)) {
+    return { error: 'Calificación fuera de rango' };
+  }
+  valor.resenas = falta(f.resenas) ? null : Number(f.resenas);
+  if (valor.resenas !== null && !(Number.isInteger(valor.resenas) && valor.resenas >= 0 && valor.resenas <= 1e8)) {
+    return { error: 'Reseñas no válidas' };
+  }
   return { valor };
 }
 

@@ -4,12 +4,13 @@
 // Local-first: todo cambio se guarda primero en el teléfono. Con servidor
 // (EXPO_PUBLIC_API_URL), entra además a la cola de pendientes y se envía cuando hay señal.
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
-import { AppState } from 'react-native';
+import { Alert, AppState, Platform } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as R from '../nucleo/reglas';
 import { importarCSV as importarCSVPuro, exportarCSV as exportarCSVPuro } from '../nucleo/csv';
 import { armarLote, aplicarRespuesta, contarPendientes } from '../nucleo/sync';
 import { obtenerPosicion } from '../datos/ubicacion';
+import { distanciaM, textoDistancia, CONFIRMAR_MOVER_M } from '../nucleo/geo';
 import ejemplo from '../datos/ejemplo.json';
 
 const CLAVE_ALMACEN = 'rutaviva.v1';
@@ -19,6 +20,14 @@ const PRECISION_MAX_M = 100;   // al guardar la ubicación de una ferretería
 const CADA_MS = 120000;        // sincronización periódica con la app abierta
 
 const Contexto = createContext(null);
+
+function confirmar(titulo, mensaje, si) {
+  if (Platform.OS === 'web') return Promise.resolve(window.confirm(titulo + '\n\n' + mensaje));
+  return new Promise(resolver => Alert.alert(titulo, mensaje, [
+    { text: 'Cancelar', style: 'cancel', onPress: () => resolver(false) },
+    { text: si, onPress: () => resolver(true) }
+  ], { cancelable: true, onDismiss: () => resolver(false) }));
+}
 export const useApp = () => useContext(Contexto);
 
 const clonar = d => JSON.parse(JSON.stringify(d));
@@ -142,6 +151,8 @@ export function AppProvider({ children }) {
   const acciones = useMemo(() => ({
     registrarVisita: v => conCambio(d => R.registrarVisita(d, { ...v, vendedor: d.vendedorActual }, CON_SERVIDOR)),
     guardarFerreteria: f => conCambio(d => R.guardarFerreteria(d, f, CON_SERVIDOR)),
+    descartarFerreteria: (id, motivo) => conCambio(d => R.descartarFerreteria(d, id, motivo, d.vendedorActual, CON_SERVIDOR)),
+    reactivarFerreteria: id => conCambio(d => R.reactivarFerreteria(d, id, CON_SERVIDOR)),
     importarCSV: texto => conCambio(d => importarCSVPuro(d, texto, CON_SERVIDOR)),
     restaurarRespaldo: texto => {
       const nuevo = R.restaurarRespaldo(datosRef.current, texto, CON_SERVIDOR);
@@ -159,7 +170,8 @@ export function AppProvider({ children }) {
     ubicarme: async () => {
       avisar('Buscando tu ubicación…');
       try {
-        setPosicion(await obtenerPosicion());
+        const p = await obtenerPosicion();
+        setPosicion(p);
         avisar('Ordenado por cercanía');
       } catch (e) {
         avisar(e.message);
@@ -171,6 +183,16 @@ export function AppProvider({ children }) {
         const p = await obtenerPosicion();
         if (p.precision > PRECISION_MAX_M) {
           avisar('Precisión de ±' + Math.round(p.precision) + ' m, muy baja. Párate en la entrada, a cielo abierto, e intenta de nuevo.');
+          return;
+        }
+        const f = datosRef.current.ferreterias.find(x => x.id === id);
+        const lejos = f && f.lat != null ? distanciaM(p, f) : 0;
+        if (lejos > CONFIRMAR_MOVER_M && !(await confirmar(
+          '¿Estás en ' + f.nombre + '?',
+          'Tu GPS está a ' + textoDistancia(lejos) + ' de donde estaba guardada. Cámbiala solo si estás parado en la entrada de la ferretería.',
+          'Sí, estoy aquí'
+        ))) {
+          avisar('No se cambió la ubicación');
           return;
         }
         conCambio(d => R.guardarUbicacion(d, id, p.lat, p.lng, CON_SERVIDOR));
