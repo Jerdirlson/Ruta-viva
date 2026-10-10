@@ -21,6 +21,13 @@ import { agrupar, enVista, extensionM, marcadorEn, ordenarPorCercania, MISMO_SIT
 
 const CENTRO_AMB = { latitude: 7.1, longitude: -73.12, latitudeDelta: 0.18, longitudeDelta: 0.18 }; // área metropolitana de Bucaramanga
 const MARGEN = { top: 60, right: 60, bottom: 60, left: 60 };
+// Sin los negocios ni el transporte del mapa base de Google: sus íconos se confundían con
+// las ferreterías. Solo quedan calles y nombres de barrios (Android; en iPhone,
+// showsPointsOfInterest hace lo mismo con Apple Maps).
+const ESTILO_MAPA = [
+  { featureType: 'poi', stylers: [{ visibility: 'off' }] },
+  { featureType: 'transit', stylers: [{ visibility: 'off' }] }
+];
 const HOLGURA_PX = 4;   // un dedo que cae justo en el borde también cuenta
 const CERCANAS_EN_VISTA = 8;   // con "Cerca de mí": el vendedor y las 8 más cercanas
 
@@ -179,6 +186,8 @@ export default function MapaHoy({ lista, posicion, elegidaId, enfoque, onSelecci
         showsUserLocation={conPermiso || !!posicion}
         showsMyLocationButton={Platform.OS === 'android' && conPermiso}
         moveOnMarkerPress={false}
+        customMapStyle={ESTILO_MAPA}
+        showsPointsOfInterest={false}
         toolbarEnabled={false}
         onPress={tocarMapa}
       >
