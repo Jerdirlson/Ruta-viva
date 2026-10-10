@@ -45,7 +45,9 @@ export default function TarjetaFerreteria({ f }) {
         {lugar ? ' · ' + lugar : ''}
       </Text>
       <Text style={s.meta}>
-        {f.ultima ? 'Última visita ' + fechaCorta(f.ultima.fecha) + ' · ' + hace(f.ultima.fecha) : 'Nunca visitada'}
+        {f.ultima ? 'Última visita ' + fechaCorta(f.ultima.fecha) + ' · ' + hace(f.ultima.fecha)
+          : (f.marcas && f.marcas.length) || f.exhibidor || (f.proveedores && f.proveedores.length)
+            ? 'Visitada en el censo · sin visitas en la app' : 'Sin visitas registradas'}
       </Text>
       {f.estado === 'seguimiento' ? <Text style={s.aviso}>Pidió visita después</Text> : null}
       <View style={s.acciones}>

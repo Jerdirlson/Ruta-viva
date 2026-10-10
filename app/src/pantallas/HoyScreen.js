@@ -9,6 +9,17 @@ import { AvisoLinea, Boton, Opcion, abrir } from '../componentes/ui';
 import TarjetaFerreteria from '../componentes/TarjetaFerreteria';
 import MapaHoy from '../componentes/MapaHoy';
 
+// Botón compacto de filtro (zona o estado). Con punto de color si es un estado.
+function Chip({ titulo, activo, onPress, punto, testID }) {
+  return (
+    <Pressable onPress={onPress} accessibilityRole="button" accessibilityState={{ selected: !!activo }} testID={testID}
+      style={({ pressed }) => [s.chip, activo && s.chipActivo, pressed && { opacity: 0.8 }]}>
+      {punto ? <View style={[s.punto, { backgroundColor: color.pin[punto] }]} /> : null}
+      <Text style={[s.chipTexto, activo && s.chipTextoActivo]} numberOfLines={1}>{titulo}</Text>
+    </Pressable>
+  );
+}
+
 export default function HoyScreen({ navigation }) {
   const { censo, posicion, ubicarme, datos, modo, sync, avisar } = useApp();
   const [zona, setZona] = useState('');
@@ -20,17 +31,27 @@ export default function HoyScreen({ navigation }) {
   // Filtro del mapa por estado (los mismos colores de la leyenda): '' = todos.
   const [soloColor, setSoloColor] = useState('');
 
-  const todas = useMemo(() => pendientesDe(censo).sort(ordenZona), [censo]);
+  // Lista y Mapa muestran lo mismo: las ferreterías activas de la zona, filtradas por
+  // estado (Todos, Pendientes, Pidió visita, Clientes, Visitadas). La ruta sale siempre
+  // de las pendientes de la zona.
+  const activas = useMemo(() => censo.filter(f => f.estado !== 'descartada').sort(ordenZona), [censo]);
+  const delColor = useMemo(() => (soloColor ? activas.filter(f => colorPin(f) === soloColor) : activas), [activas, soloColor]);
   const porZona = useMemo(() => {
     const m = new Map();
-    todas.forEach(f => m.set(grupoDe(f), (m.get(grupoDe(f)) || 0) + 1));
+    delColor.forEach(f => m.set(grupoDe(f), (m.get(grupoDe(f)) || 0) + 1));
     return m;
-  }, [todas]);
+  }, [delColor]);
   const zonaActiva = zona && porZona.has(zona) ? zona : '';
-  const delaZona = todas.filter(f => !zonaActiva || grupoDe(f) === zonaActiva);
+  const enZona = f => !zonaActiva || grupoDe(f) === zonaActiva;
+  const porColor = {};
+  activas.filter(enZona).forEach(f => { const c = colorPin(f); porColor[c] = (porColor[c] || 0) + 1; });
+  const totalZona = activas.filter(enZona).length;
+  const delaZona = delColor.filter(enZona);
   const pendientes = posicion ? ordenarPorCercania(delaZona, posicion) : delaZona;
-  const cercanas = posicion ? paradasCercanas(pendientes, posicion) : [];
-  const ruta = cercanas.length ? cercanas : pendientes;
+  const pendientesRuta = useMemo(() => pendientesDe(censo), [censo]).filter(enZona);
+  const cercanas = posicion ? paradasCercanas(ordenarPorCercania(pendientesRuta, posicion), posicion) : [];
+  const todas = delColor;
+  const ruta = cercanas.length ? cercanas : pendientesRuta;
   const nRuta = Math.min(PARADAS_RUTA, ruta.length);
 
   // En la lista: separadores por zona, salvo cuando se ordena por cercanía o hay una zona elegida.
@@ -58,11 +79,17 @@ export default function HoyScreen({ navigation }) {
         ? <AvisoLinea texto="Falta tu nombre de vendedor" accion="Escribirlo" onPress={() => navigation.navigate('Datos')} /> : null}
 
       <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={s.zonas}>
-        <Opcion chica titulo={'Todas ' + todas.length} activa={!zonaActiva} onPress={() => setZona('')} testID="zona-todas" />
+        <Chip titulo={'Todas las zonas ' + todas.length} activo={!zonaActiva} onPress={() => setZona('')} testID="zona-todas" />
         {porZona.size > 1 ? [...porZona.keys()].map(z => (
-          <Opcion key={z} chica titulo={z + ' ' + porZona.get(z)} activa={zonaActiva === z}
-            onPress={() => setZona(z)} testID={'zona-' + z} />
+          <Chip key={z} titulo={z + ' ' + porZona.get(z)} activo={zonaActiva === z} onPress={() => setZona(z)} testID={'zona-' + z} />
         )) : null}
+      </ScrollView>
+
+      <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={s.zonas}>
+        {[['', 'Todos'], ['rojo', 'Pendientes'], ['amarillo', 'Pidió visita'], ['verde', 'Clientes'], ['gris', 'Visitadas']].map(([c, t]) => (
+          <Chip key={c || 'todos'} punto={c} titulo={t + ' ' + (c ? porColor[c] || 0 : totalZona)} activo={soloColor === c}
+            onPress={() => { setSoloColor(c); setSeleccionada(null); setVarias(null); }} testID={'filtro-' + (c || 'todos')} />
+        ))}
       </ScrollView>
 
       <View style={s.controles}>
@@ -84,30 +111,11 @@ export default function HoyScreen({ navigation }) {
   );
 
   if (vista === 'mapa') {
-    const delaZonaMapa = censo.filter(f => f.estado !== 'descartada' && (!zonaActiva || grupoDe(f) === zonaActiva));
-    const porColor = {};
-    delaZonaMapa.forEach(f => { const c = colorPin(f); porColor[c] = (porColor[c] || 0) + 1; });
-    const delMapa = soloColor ? delaZonaMapa.filter(f => colorPin(f) === soloColor) : delaZonaMapa;
+    const delMapa = delaZona;
     const sinUbicar = delMapa.filter(f => f.lat == null).length;
     return (
       <View style={s.pantalla}>
         <View style={s.cabeceraMapa}>{cabecera}</View>
-        {/* Filtro por estado: tocar uno muestra solo esos; "Todos" vuelve a mostrarlo todo. */}
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={s.filtrosMapa} style={{ flexGrow: 0 }}>
-          {[['', 'Todos'], ['rojo', 'Pendientes'], ['amarillo', 'Pidió visita'], ['verde', 'Clientes'], ['gris', 'Visitadas']].map(([c, t]) => {
-            const activo = soloColor === c;
-            return (
-              <Pressable key={c || 'todos'} onPress={() => { setSoloColor(c); setSeleccionada(null); setVarias(null); }}
-                accessibilityRole="button" accessibilityState={{ selected: activo }} testID={'filtro-mapa-' + (c || 'todos')}
-                style={({ pressed }) => [s.filtroMapa, activo && s.filtroMapaActivo, pressed && { opacity: 0.8 }]}>
-                {c ? <View style={[s.punto, { backgroundColor: color.pin[c] }]} /> : null}
-                <Text style={[s.filtroMapaTexto, activo && s.filtroMapaTextoActivo]}>
-                  {t + ' ' + (c ? porColor[c] || 0 : delaZonaMapa.length)}
-                </Text>
-              </Pressable>
-            );
-          })}
-        </ScrollView>
         {sinUbicar ? <Text style={[s.textoLeyenda, s.sinUbicar]}>{sinUbicar + ' de estas sin ubicar en el mapa'}</Text> : null}
         <View style={s.mapa}>
           <MapaHoy lista={delMapa} posicion={posicion} elegidaId={seleccionada && seleccionada.id}
@@ -152,7 +160,7 @@ export default function HoyScreen({ navigation }) {
         ? <Text style={s.grupo}>{item.grupo}</Text>
         : <TarjetaFerreteria f={item.f} />}
       ItemSeparatorComponent={() => <View style={{ height: 10 }} />}
-      ListEmptyComponent={<Text style={s.vacio}>No hay visitas pendientes. ¡Buen trabajo!</Text>}
+      ListEmptyComponent={<Text style={s.vacio}>{soloColor === 'rojo' ? 'No hay visitas pendientes. ¡Buen trabajo!' : 'Ninguna ferretería con este filtro.'}</Text>}
     />
   );
 }
@@ -165,19 +173,18 @@ const s = StyleSheet.create({
   fila: { flexDirection: 'row', alignItems: 'baseline', justifyContent: 'space-between' },
   titulo: { fontSize: letra.titulo, fontWeight: '800', color: color.texto },
   fecha: { fontSize: letra.chica, color: color.suave },
-  zonas: { gap: 8, paddingRight: 16 },
+  zonas: { gap: 6, paddingRight: 16 },
+  chip: { minHeight: 34, flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 12, borderRadius: radio.pastilla,
+    borderWidth: 1.5, borderColor: color.lineaFuerte, backgroundColor: color.fondo },
+  chipActivo: { backgroundColor: color.grafito, borderColor: color.grafito },
+  chipTexto: { fontSize: letra.mini, fontWeight: '700', color: color.texto },
+  chipTextoActivo: { color: color.grafitoTexto },
   controles: { flexDirection: 'row', gap: 8 },
   ayuda: { fontSize: letra.chica, color: color.suave },
   grupo: { marginTop: 6, fontSize: letra.mini, fontWeight: '800', letterSpacing: 1, textTransform: 'uppercase', color: color.suave },
   vacio: { color: color.suave, paddingVertical: 16, fontSize: letra.normal },
   leyenda: { flexDirection: 'row', flexWrap: 'wrap', gap: 12, paddingHorizontal: 16, paddingBottom: 8 },
   itemLeyenda: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingVertical: 4 },
-  filtrosMapa: { gap: 8, paddingHorizontal: 16, paddingBottom: 8 },
-  filtroMapa: { minHeight: 40, flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 12, borderRadius: radio.pastilla,
-    borderWidth: 2, borderColor: color.lineaFuerte, backgroundColor: color.fondo },
-  filtroMapaActivo: { backgroundColor: color.grafito, borderColor: color.grafito },
-  filtroMapaTexto: { fontSize: letra.chica, fontWeight: '700', color: color.texto },
-  filtroMapaTextoActivo: { color: color.grafitoTexto },
   sinUbicar: { paddingHorizontal: 16, paddingBottom: 6 },
   punto: { width: 14, height: 14, borderRadius: 7, borderWidth: 2, borderColor: color.fondo },
   textoLeyenda: { fontSize: letra.mini, color: color.suave },
