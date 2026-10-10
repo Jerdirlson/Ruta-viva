@@ -13,6 +13,7 @@
 import React, { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 import MapView, { Marker } from 'react-native-maps';
+import { useFocusEffect } from '@react-navigation/native';
 import { color } from '../tema';
 import { colorPin } from '../nucleo/reglas';
 import { agrupar, enVista, extensionM, marcadorEn, ordenarPorCercania, MISMO_SITIO_M, TOQUE_PUNTO_PX, GRUPO_MAX_PX } from '../nucleo/geo';
@@ -46,17 +47,18 @@ function Punto({ g, elegida }) {
   );
 }
 
-// Cada marcador decide cuándo redibujarse: al aparecer y cuando cambia su color, su número
-// o si está elegido. Antes se redibujaban todos cada vez que cambiaba uno, y en Android
-// cada marcador es una imagen nativa: el mapa se trababa al moverlo.
+// En Android cada marcador con vista propia es una "foto" (bitmap) que el mapa toma y
+// congela (tracksViewChanges). Actualizar esa foto falla: quedaban círculos viejos al
+// acercarse y puntos mal dibujados al elegir una ferretería o volver de la ficha.
+// Por eso un marcador nunca se actualiza: si cambia su número, su color o si está elegido,
+// cambia su key y se crea uno nuevo, que se dibuja una vez y se congela.
 const Marcador = memo(function Marcador({ g, elegida, onTocar }) {
   const [rastrear, setRastrear] = useState(true);
   const n = g.ferreterias.length;
   useEffect(() => {
-    setRastrear(true);
-    const t = setTimeout(() => setRastrear(false), 500);
+    const t = setTimeout(() => setRastrear(false), 600);
     return () => clearTimeout(t);
-  }, [g.color, n, elegida]);
+  }, []);
   return (
     <Marker
       coordinate={{ latitude: g.lat, longitude: g.lng }}
@@ -69,13 +71,16 @@ const Marcador = memo(function Marcador({ g, elegida, onTocar }) {
       <Punto g={g} elegida={elegida} />
     </Marker>
   );
-}, (a, b) => a.elegida === b.elegida && a.onTocar === b.onTocar && a.g.clave === b.g.clave &&
-  a.g.color === b.g.color && a.g.ferreterias.length === b.g.ferreterias.length && a.g.lat === b.g.lat && a.g.lng === b.g.lng);
+}, (a, b) => a.onTocar === b.onTocar && a.g.lat === b.g.lat && a.g.lng === b.g.lng);
 
 export default function MapaHoy({ lista, posicion, elegidaId, onSeleccionar, onElegirVarias }) {
   const mapa = useRef(null);
   const [region, setRegion] = useState(CENTRO_AMB);
   const [tamano, setTamano] = useState(null);
+  // Al volver a la pantalla (por ejemplo, de la ficha) se crean de nuevo todos los
+  // marcadores: Android puede haber dejado sus fotos desactualizadas.
+  const [vuelta, setVuelta] = useState(0);
+  useFocusEffect(useCallback(() => { setVuelta(v => v + 1); }, []));
   const ubicadas = useMemo(() => lista.filter(f => f.lat != null), [lista]);
   // Solo lo que está en la vista: de cerca serían cientos de marcadores fuera de pantalla.
   const grupos = useMemo(() => agrupar(enVista(ubicadas, region), region, tamano, colorPin), [ubicadas, region, tamano]);
@@ -136,9 +141,11 @@ export default function MapaHoy({ lista, posicion, elegidaId, onSeleccionar, onE
         toolbarEnabled={false}
         onPress={tocarMapa}
       >
-        {grupos.map(g => (
-          <Marcador key={g.clave} g={g} elegida={!!elegidaId && g.ferreterias.some(f => f.id === elegidaId)} onTocar={tocarMarcador} />
-        ))}
+        {grupos.map(g => {
+          const elegida = !!elegidaId && g.ferreterias.some(f => f.id === elegidaId);
+          const key = [g.clave, g.ferreterias.length, g.color, elegida ? 'e' : '', vuelta].join(':');
+          return <Marcador key={key} g={g} elegida={elegida} onTocar={tocarMarcador} />;
+        })}
       </MapView>
     </View>
   );
