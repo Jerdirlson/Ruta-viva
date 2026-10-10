@@ -3,26 +3,31 @@
  * Disposición: lista compacta de tarjetas para recorrer con el pulgar; acciones
  * en una sola fila; formularios como hoja inferior con "Guardar" siempre visible.
  *
- * Colores: todos viven aquí. --marca y --marca-texto son PROVISIONALES hasta
- * confirmar los colores oficiales de SOCODA; cambiarlos aquí cambia toda la app.
+ * Colores: todos viven aquí, tomados del sitio de SOCODA (socoda.com.co):
+ * rojo del logo y botones #E90128, rojo oscuro de la barra superior #940002,
+ * grafito del botón "Comprar ahora" #23292C y gris del buscador #F8F8F8.
+ * Acciones en rojo; selecciones en grafito, para que no todo sea rojo.
  * Tema claro único a propósito: es lo que mejor se lee al sol.
  */
 :root {
-  --marca: #0a3d7a;          /* provisional: color principal de SOCODA */
-  --marca-texto: #ffffff;    /* texto sobre --marca */
-  --marca-suave: #e8eef7;    /* fondos suaves derivados de la marca */
-  --acento: #f2a900;         /* foco del teclado */
+  --marca: #e90128;          /* rojo SOCODA: logo y acciones principales */
+  --marca-texto: #ffffff;    /* texto sobre --marca (contraste 4,7:1) */
+  --marca-oscuro: #940002;   /* barra superior del sitio */
+  --marca-suave: #fdecef;    /* fondos suaves derivados del rojo */
+  --grafito: #23292c;        /* botón "Comprar ahora" del sitio: selecciones */
+  --grafito-texto: #ffffff;
+  --acento: #23292c;         /* foco del teclado (visible también sobre rojo) */
   --fondo: #ffffff;
-  --superficie: #f3f5f8;
-  --texto: #111418;
-  --suave: #4a5260;
-  --linea: #cdd3dc;
-  --linea-fuerte: #8a93a1;
+  --superficie: #f8f8f8;
+  --texto: #1f1f1f;
+  --suave: #4d4d4d;
+  --linea: #dcdcdc;
+  --linea-fuerte: #8c8c8c;
   --ok-fondo: #dcfce7;
   --ok-texto: #14532d;
   --aviso-fondo: #fff4cc;
   --aviso-texto: #5c3d00;
-  --info-fondo: #dbe7fb;
+  --info-fondo: #eceeef;
   --radio: 14px;
   --radio-chico: 10px;
   color-scheme: light;
@@ -56,10 +61,12 @@ h3 { font-size: 1.1rem; }
   justify-content: space-between;
   gap: 12px;
   padding: 10px 16px;
-  background: var(--marca);
-  color: var(--marca-texto);
+  border-top: 4px solid var(--marca-oscuro);
+  border-bottom: 1px solid var(--linea);
+  background: var(--fondo);
+  color: var(--texto);
 }
-.barra strong { font-size: 1.15rem; letter-spacing: .06em; }
+.barra strong { font-size: 1.4rem; font-weight: 800; letter-spacing: -.01em; color: var(--marca); }
 .barra span { display: none; }
 .estado-sync {
   min-height: 44px;
@@ -133,8 +140,8 @@ main > * { min-width: 0; }
   cursor: pointer;
 }
 .chip-zona span { color: var(--suave); font-weight: 600; margin-left: 4px; }
-.chip-zona.activo { background: var(--marca); border-color: var(--marca); color: var(--marca-texto); }
-.chip-zona.activo span { color: var(--marca-texto); opacity: .85; }
+.chip-zona.activo { background: var(--grafito); border-color: var(--grafito); color: var(--grafito-texto); }
+.chip-zona.activo span { color: var(--grafito-texto); opacity: .85; }
 
 /* Formularios */
 .filtros { display: grid; gap: 8px; grid-template-columns: repeat(3, minmax(0, 1fr)); }
@@ -174,17 +181,17 @@ textarea { min-height: 72px; resize: vertical; }
   justify-content: center;
   min-height: 48px;
   padding: 8px 12px;
-  border: 2px solid var(--marca);
+  border: 2px solid var(--grafito);
   border-radius: var(--radio-chico);
   background: var(--fondo);
-  color: var(--marca);
+  color: var(--grafito);
   font: inherit;
   font-weight: 700;
   text-align: center;
   text-decoration: none;
   cursor: pointer;
 }
-.btn-pri { background: var(--marca); color: var(--marca-texto); }
+.btn-pri { background: var(--marca); border-color: var(--marca); color: var(--marca-texto); }
 .btn-off { border-color: var(--linea); color: var(--suave); font-weight: 600; font-size: .85rem; cursor: default; }
 .btn-ancho { width: 100%; }
 .btn-ruta { width: 100%; gap: 8px; }
@@ -254,7 +261,7 @@ textarea { min-height: 72px; resize: vertical; }
   color: var(--texto);
 }
 .chip-nueva { background: var(--superficie); color: var(--texto); }
-.chip-visitada { background: var(--info-fondo); color: var(--marca); }
+.chip-visitada { background: var(--info-fondo); color: var(--grafito); }
 .chip-seguimiento { background: var(--aviso-fondo); color: var(--aviso-texto); }
 .chip-cliente { background: var(--ok-fondo); color: var(--ok-texto); }
 
@@ -269,15 +276,15 @@ textarea { min-height: 72px; resize: vertical; }
 .segmento { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
 .segmento button {
   min-height: 48px;
-  border: 2px solid var(--marca);
+  border: 2px solid var(--grafito);
   border-radius: var(--radio-chico);
   background: var(--fondo);
-  color: var(--marca);
+  color: var(--grafito);
   font: inherit;
   font-weight: 700;
   cursor: pointer;
 }
-.segmento button.activo { background: var(--marca); color: var(--marca-texto); }
+.segmento button.activo { background: var(--grafito); border-color: var(--grafito); color: var(--grafito-texto); }
 .kpis { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
 .kpi {
   display: flex;
@@ -346,7 +353,7 @@ th + th, td + td { text-align: right; }
   opacity: 0;
   pointer-events: none;
 }
-.op:has(input:checked) { background: var(--marca); border-color: var(--marca); color: var(--marca-texto); }
+.op:has(input:checked) { background: var(--grafito); border-color: var(--grafito); color: var(--grafito-texto); }
 .op:has(input:focus-visible) { outline: 3px solid var(--acento); }
 
 /* Hoja inferior para formularios: "Guardar" siempre a la vista */

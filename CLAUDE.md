@@ -26,6 +26,8 @@ bash api/run-tests.sh                      # pruebas del API contra Postgres des
 
 **Al cambiar archivos de `web/`, subir `CACHE` en `web/sw.js`.**
 
+**Colores de marca** (medidos en socoda.com.co): rojo `#E90128` para acciones, rojo oscuro `#940002` en la franja superior, grafito `#23292C` para selecciones. Viven solo en el `:root` de `web/styles.css`; no poner colores sueltos en otras reglas.
+
 ## Estado
 
 - Listo y probado en local: app, sincronización entre varios celulares, cola sin conexión, API, migraciones, respaldo y restauración.
