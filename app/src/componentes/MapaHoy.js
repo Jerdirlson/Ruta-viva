@@ -17,7 +17,7 @@ import { useFocusEffect } from '@react-navigation/native';
 import { color } from '../tema';
 import { colorPin } from '../nucleo/reglas';
 import { pedirPermisoUbicacion } from '../datos/ubicacion';
-import { agrupar, enVista, extensionM, marcadorEn, ordenarPorCercania, MISMO_SITIO_M, TOQUE_PUNTO_PX, GRUPO_MAX_PX } from '../nucleo/geo';
+import { agrupar, asignarRanuras, enVista, extensionM, marcadorEn, ordenarPorCercania, MISMO_SITIO_M, TOQUE_PUNTO_PX, GRUPO_MAX_PX } from '../nucleo/geo';
 
 const CENTRO_AMB = { latitude: 7.1, longitude: -73.12, latitudeDelta: 0.18, longitudeDelta: 0.18 }; // área metropolitana de Bucaramanga
 const MARGEN = { top: 60, right: 60, bottom: 60, left: 60 };
@@ -55,25 +55,35 @@ function Punto({ g, elegida }) {
   );
 }
 
-// En Android cada marcador con vista propia es una "foto" (bitmap) que el mapa toma y
-// congela (tracksViewChanges). Cada marcador conserva su key (no se borra y se vuelve a
-// crear): recrearlos en bloque, sobre todo con el mapa moviéndose, dejaba en Android
-// círculos viejos sin borrar y pines por defecto sin dibujar. Cuando cambia su número, su
-// color, si está elegido, o al volver a la pantalla (repintar), se descongela un momento
-// para tomar la foto nueva, en su lugar.
-const Marcador = memo(function Marcador({ g, elegida, repintar, onTocar }) {
+// En Android, la librería de mapas NO borra de la pantalla un marcador que se quita: al
+// filtrar o al acercarse quedaban círculos viejos pegados (y pines rojos por defecto).
+// Por eso nunca se quitan marcadores: hay un conjunto de "ranuras" que solo crece, y cada
+// ranura se reutiliza (cambia posición, color y número, que sí se actualiza bien). Las que
+// sobran se esconden: invisibles y lejos del área (no se pueden tocar por error).
+const LEJOS = { latitude: -80, longitude: 0 };
+
+const Ranura = memo(function Ranura({ g, elegida, repintar, onTocar }) {
   const [rastrear, setRastrear] = useState(true);
-  const n = g.ferreterias.length;
+  const n = g ? g.ferreterias.length : 0;
+  // Foto nueva cuando cambia lo que muestra (o al volver a la pantalla): se descongela un momento.
   useEffect(() => {
     setRastrear(true);
     const t = setTimeout(() => setRastrear(false), 800);
     return () => clearTimeout(t);
-  }, [g.color, n, elegida, repintar]);
+  }, [g ? g.clave : '', g ? g.color : '', n, elegida, repintar]);
+  if (!g) {
+    return (
+      <Marker coordinate={LEJOS} opacity={0} tracksViewChanges={rastrear} zIndex={0}>
+        <View collapsable={false} style={s.vacia} />
+      </Marker>
+    );
+  }
   return (
     <Marker
       coordinate={{ latitude: g.lat, longitude: g.lng }}
       anchor={{ x: 0.5, y: 0.5 }}
       centerOffset={{ x: 0, y: 0 }}
+      opacity={1}
       zIndex={elegida ? 1000 : n}
       tracksViewChanges={rastrear}
       onPress={ev => onTocar(g, ev)}
@@ -81,8 +91,10 @@ const Marcador = memo(function Marcador({ g, elegida, repintar, onTocar }) {
       <Punto g={g} elegida={elegida} />
     </Marker>
   );
-}, (a, b) => a.onTocar === b.onTocar && a.elegida === b.elegida && a.repintar === b.repintar && a.g.lat === b.g.lat &&
-  a.g.lng === b.g.lng && a.g.color === b.g.color && a.g.ferreterias.length === b.g.ferreterias.length);
+}, (a, b) => a.onTocar === b.onTocar && a.elegida === b.elegida && a.repintar === b.repintar &&
+  (a.g ? a.g.clave + a.g.color + a.g.ferreterias.length + a.g.lat + a.g.lng : '') ===
+  (b.g ? b.g.clave + b.g.color + b.g.ferreterias.length + b.g.lat + b.g.lng : ''));
+
 
 export default function MapaHoy({ lista, posicion, elegidaId, enfoque, onSeleccionar, onElegirVarias }) {
   const mapa = useRef(null);
@@ -123,6 +135,8 @@ export default function MapaHoy({ lista, posicion, elegidaId, enfoque, onSelecci
   const ubicadas = useMemo(() => lista.filter(f => f.lat != null), [lista]);
   // Solo lo que está en la vista: de cerca serían cientos de marcadores fuera de pantalla.
   const grupos = useMemo(() => agrupar(enVista(ubicadas, region), region, tamano, colorPin), [ubicadas, region, tamano]);
+  const estadoRanuras = useRef({ porClave: new Map(), libres: [], total: 0 });
+  const ranuras = useMemo(() => asignarRanuras(estadoRanuras.current, grupos), [grupos]);
 
   const encuadrar = useCallback(puntos => {
     if (puntos.length && mapa.current) mapa.current.fitToCoordinates(puntos, { edgePadding: MARGEN, animated: true });
@@ -194,10 +208,10 @@ export default function MapaHoy({ lista, posicion, elegidaId, enfoque, onSelecci
         toolbarEnabled={false}
         onPress={tocarMapa}
       >
-        {grupos.map(g => {
-          const elegida = !!elegidaId && g.ferreterias.some(f => f.id === elegidaId);
-          return <Marcador key={g.clave} g={g} elegida={elegida} repintar={vuelta} onTocar={tocarMarcador} />;
-        })}
+        {ranuras.map(({ i, g }) => (
+          <Ranura key={'r' + i} g={g} elegida={!!g && !!elegidaId && g.ferreterias.some(f => f.id === elegidaId)}
+            repintar={vuelta} onTocar={tocarMarcador} />
+        ))}
       </MapView>
       <Text style={s.diagnostico} pointerEvents="none" testID="mapa-diagnostico">
         {'~' + Math.max(0.1, Math.round(region.longitudeDelta * 111 * 10) / 10) + ' km · ' + grupos.length + ' marcadores'}
@@ -207,6 +221,7 @@ export default function MapaHoy({ lista, posicion, elegidaId, enfoque, onSelecci
 }
 
 const s = StyleSheet.create({
+  vacia: { width: 2, height: 2 },
   toque: { alignItems: 'center', justifyContent: 'center' },
   punto: { width: 18, height: 18, borderRadius: 9, borderWidth: 3, borderColor: color.fondo },
   puntoElegido: { width: 26, height: 26, borderRadius: 13, borderWidth: 4, borderColor: color.grafito },

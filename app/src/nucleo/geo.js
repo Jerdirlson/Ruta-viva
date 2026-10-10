@@ -170,3 +170,24 @@ export function enVista(lista, region, margen = 0.25) {
   return lista.filter(f => f.lat != null &&
     Math.abs(f.lat - region.latitude) <= medioLat && Math.abs(f.lng - region.longitude) <= medioLng);
 }
+
+// ---------- ranuras de marcadores (ver MapaHoy) ----------
+// Asigna a cada grupo una ranura estable (la misma mientras siga visible) y reutiliza las
+// que se liberan. Devuelve una entrada por ranura existente: { i, g } (g = null si sobra).
+export function asignarRanuras(estado, grupos) {
+  const vivos = new Set(grupos.map(g => g.clave));
+  for (const [clave, i] of estado.porClave) {
+    if (!vivos.has(clave)) { estado.porClave.delete(clave); estado.libres.push(i); }
+  }
+  const ranuras = Array.from({ length: estado.total }, (_, i) => ({ i, g: null }));
+  grupos.forEach(g => {
+    let i = estado.porClave.get(g.clave);
+    if (i === undefined) {
+      i = estado.libres.length ? estado.libres.shift() : estado.total++;
+      estado.porClave.set(g.clave, i);
+      if (i >= ranuras.length) ranuras.push({ i, g: null });
+    }
+    ranuras[i] = { i, g };
+  });
+  return ranuras;
+}

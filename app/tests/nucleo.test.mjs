@@ -451,3 +451,26 @@ test('presencia de marcas: % sobre las censadas, por municipio, exhibidores y pr
   assert.deepEqual(m.exhibidores.map(x => x.ferreterias), [0, 1, 1]);
   assert.deepEqual(m.proveedores.map(p => [p.clave, p.ferreterias]), [['chp', 2], ['corbeta', 1]]);
 });
+
+test('mapa: ranuras de marcadores que nunca se quitan (Android no borra los quitados)', () => {
+  const estado = { porClave: new Map(), libres: [], total: 0 };
+  const g = (clave, color) => ({ clave, color, ferreterias: [{}] });
+  // "Todos": dos rojos y un verde.
+  let r = G.asignarRanuras(estado, [g('rojo1', 'rojo'), g('rojo2', 'rojo'), g('verde1', 'verde')]);
+  assert.equal(r.length, 3);
+  const ranuraVerde = r.find(x => x.g && x.g.clave === 'verde1').i;
+  // "Clientes": solo el verde. Las ranuras no se quitan; las de los rojos quedan vacías (escondidas).
+  r = G.asignarRanuras(estado, [g('verde1', 'verde')]);
+  assert.equal(r.length, 3);
+  assert.deepEqual(r.filter(x => x.g).map(x => x.g.clave), ['verde1']);
+  assert.ok(!r.some(x => x.g && x.g.color === 'rojo'));
+  assert.equal(r.find(x => x.g).i, ranuraVerde);   // el verde conserva su ranura
+  // Otra vez "Todos": se reutilizan las ranuras libres, no se crean de más.
+  r = G.asignarRanuras(estado, [g('rojo1', 'rojo'), g('rojo2', 'rojo'), g('verde1', 'verde')]);
+  assert.equal(r.length, 3);
+  assert.equal(new Set(r.filter(x => x.g).map(x => x.i)).size, 3);
+  // Más grupos de los que había: crece, y cada grupo tiene exactamente una ranura.
+  r = G.asignarRanuras(estado, ['a', 'b', 'c', 'd', 'e'].map(k => g(k, 'gris')));
+  assert.equal(r.length, 5);
+  assert.deepEqual(r.map(x => x.g.clave).sort(), ['a', 'b', 'c', 'd', 'e']);
+});
