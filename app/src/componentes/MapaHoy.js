@@ -74,7 +74,7 @@ const Marcador = memo(function Marcador({ g, elegida, onTocar }) {
   );
 }, (a, b) => a.onTocar === b.onTocar && a.g.lat === b.g.lat && a.g.lng === b.g.lng);
 
-export default function MapaHoy({ lista, posicion, elegidaId, onSeleccionar, onElegirVarias }) {
+export default function MapaHoy({ lista, posicion, elegidaId, enfoque, onSeleccionar, onElegirVarias }) {
   const mapa = useRef(null);
   const [region, setRegion] = useState(CENTRO_AMB);
   const [tamano, setTamano] = useState(null);
@@ -119,7 +119,18 @@ export default function MapaHoy({ lista, posicion, elegidaId, onSeleccionar, onE
   }, []);
   // Sin ubicación: todas. Con "Cerca de mí": el vendedor y las más cercanas (si se
   // encuadraran todas, la vista no cambiaría y parecería que no hizo nada).
+  const ultimoEnfoque = useRef(0);
+  const enfocar = useCallback(() => {
+    if (!enfoque || !mapa.current) return false;
+    ultimoEnfoque.current = Date.now();
+    mapa.current.animateToRegion({ latitude: enfoque.lat, longitude: enfoque.lng, latitudeDelta: 0.004, longitudeDelta: 0.004 }, 600);
+    return true;
+  }, [enfoque]);
+  useEffect(() => { enfocar(); }, [enfoque && enfoque.t]); // eslint-disable-line react-hooks/exhaustive-deps
+
   const ajustar = useCallback(() => {
+    // Recién centrado en una ferretería ("Ver en el mapa"): no encuadrar todo encima.
+    if (Date.now() - ultimoEnfoque.current < 2500) return;
     const base = posicion ? ordenarPorCercania(ubicadas, posicion).slice(0, CERCANAS_EN_VISTA) : ubicadas;
     const puntos = base.map(f => ({ latitude: f.lat, longitude: f.lng }));
     if (posicion) puntos.push({ latitude: posicion.lat, longitude: posicion.lng });
@@ -162,7 +173,7 @@ export default function MapaHoy({ lista, posicion, elegidaId, onSeleccionar, onE
         ref={mapa}
         style={StyleSheet.absoluteFill}
         initialRegion={CENTRO_AMB}
-        onMapReady={() => { ajustar(); leerRegion(); }}
+        onMapReady={() => { if (!(enfoque && Date.now() - enfoque.t < 5000 && enfocar())) ajustar(); leerRegion(); }}
         onRegionChange={leerRegion}
         onRegionChangeComplete={r => { setRegion(r); leerRegion(); }}
         showsUserLocation={conPermiso || !!posicion}

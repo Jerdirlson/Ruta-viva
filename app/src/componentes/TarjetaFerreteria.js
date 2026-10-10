@@ -22,7 +22,8 @@ export function hace(iso) {
   return 'hace ' + n + ' días';
 }
 
-export default function TarjetaFerreteria({ f }) {
+// enMapa: la tarjeta que ya se muestra sobre el mapa no lleva "Ver en el mapa".
+export default function TarjetaFerreteria({ f, enMapa }) {
   const navegacion = useNavigation();
   const { posicion, avisar } = useApp();
   const tel = telefonoMarcable(f);
@@ -50,6 +51,14 @@ export default function TarjetaFerreteria({ f }) {
             ? 'Visitada en el censo · sin visitas en la app' : 'Sin visitas registradas'}
       </Text>
       {f.estado === 'seguimiento' ? <Text style={s.aviso}>Pidió visita después</Text> : null}
+      {!enMapa ? (
+        f.lat != null ? (
+          <Pressable onPress={() => navegacion.navigate('Hoy', { verEnMapa: f.id, t: Date.now() })} accessibilityRole="button"
+            hitSlop={8} style={({ pressed }) => [s.verMapa, pressed && { opacity: 0.6 }]} testID={'ver-mapa-' + f.id}>
+            <Text style={s.verMapaTexto}>Ver en el mapa</Text>
+          </Pressable>
+        ) : <Text style={s.sinUbicar}>Sin ubicar en el mapa: guarda su ubicación cuando la visites</Text>
+      ) : null}
       <View style={s.acciones}>
         <Boton titulo="Maps" estilo={{ flex: 1 }} onPress={() => abrir(urlMaps(f), avisar)} />
         {tel
@@ -62,6 +71,9 @@ export default function TarjetaFerreteria({ f }) {
 }
 
 const s = StyleSheet.create({
+  verMapa: { alignSelf: 'flex-start', paddingVertical: 4 },
+  verMapaTexto: { fontSize: letra.chica, fontWeight: '800', color: color.marca, textDecorationLine: 'underline' },
+  sinUbicar: { fontSize: letra.mini, color: color.suave },
   tarjeta: {
     gap: 6,
     padding: 12,

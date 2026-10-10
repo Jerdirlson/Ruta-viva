@@ -1,5 +1,5 @@
 // Hoy: visitas pendientes por zona, en lista o mapa, con "Cerca de mí" y ruta en Google Maps.
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { FlatList, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { color, letra, radio, TOQUE } from '../tema';
 import { pendientesDe, ordenZona, grupoDe, colorPin } from '../nucleo/reglas';
@@ -20,7 +20,7 @@ function Chip({ titulo, activo, onPress, punto, testID }) {
   );
 }
 
-export default function HoyScreen({ navigation }) {
+export default function HoyScreen({ navigation, route }) {
   const { censo, posicion, ubicarme, datos, modo, sync, avisar } = useApp();
   const [zona, setZona] = useState('');
   const [vista, setVista] = useState('lista');
@@ -30,6 +30,21 @@ export default function HoyScreen({ navigation }) {
   const elegir = f => { setVarias(null); setSeleccionada(f); };
   // Filtro del mapa por estado (los mismos colores de la leyenda): '' = todos.
   const [soloColor, setSoloColor] = useState('');
+  // "Ver en el mapa": pasa a Mapa sin filtros, con la ferretería elegida y el mapa centrado en ella.
+  const [enfoque, setEnfoque] = useState(null);
+  const verEnMapa = route && route.params && route.params.verEnMapa;
+  const marcaVer = route && route.params && route.params.t;
+  useEffect(() => {
+    if (!verEnMapa) return;
+    const f = censo.find(x => x.id === verEnMapa);
+    if (!f || f.lat == null) return;
+    setZona('');
+    setSoloColor('');
+    setVarias(null);
+    setSeleccionada(f);
+    setVista('mapa');
+    setEnfoque({ lat: f.lat, lng: f.lng, t: Date.now() });
+  }, [verEnMapa, marcaVer]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Lista y Mapa muestran lo mismo: las ferreterías activas de la zona, filtradas por
   // estado (Todos, Pendientes, Pidió visita, Clientes, Visitadas). La ruta sale siempre
@@ -118,7 +133,7 @@ export default function HoyScreen({ navigation }) {
         <View style={s.cabeceraMapa}>{cabecera}</View>
         {sinUbicar ? <Text style={[s.textoLeyenda, s.sinUbicar]}>{sinUbicar + ' de estas sin ubicar en el mapa'}</Text> : null}
         <View style={s.mapa}>
-          <MapaHoy lista={delMapa} posicion={posicion} elegidaId={seleccionada && seleccionada.id}
+          <MapaHoy lista={delMapa} posicion={posicion} elegidaId={seleccionada && seleccionada.id} enfoque={enfoque}
             onSeleccionar={elegir} onElegirVarias={lista => { setSeleccionada(null); setVarias(lista); }} />
         </View>
         {varias ? (
@@ -141,7 +156,7 @@ export default function HoyScreen({ navigation }) {
         ) : null}
         {seleccionada ? (
           <View style={s.seleccion}>
-            <TarjetaFerreteria f={censo.find(x => x.id === seleccionada.id) || seleccionada} />
+            <TarjetaFerreteria f={censo.find(x => x.id === seleccionada.id) || seleccionada} enMapa />
           </View>
         ) : null}
       </View>
