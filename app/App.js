@@ -2,7 +2,7 @@
 import React from 'react';
 import { ActivityIndicator, StyleSheet, Text, View } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
-import { SafeAreaProvider } from 'react-native-safe-area-context';
+import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
 import { NavigationContainer, DefaultTheme } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
@@ -18,6 +18,9 @@ import DatosScreen from './src/pantallas/DatosScreen';
 import FichaScreen from './src/pantallas/FichaScreen';
 import VisitaScreen from './src/pantallas/VisitaScreen';
 import NuevaScreen from './src/pantallas/NuevaScreen';
+import IngresoScreen from './src/pantallas/IngresoScreen';
+import CambiarClaveScreen from './src/pantallas/CambiarClaveScreen';
+import UsuariosScreen from './src/pantallas/UsuariosScreen';
 
 const Pila = createNativeStackNavigator();
 const Pestanas = createBottomTabNavigator();
@@ -60,9 +63,16 @@ function Principal() {
 }
 
 function Raiz() {
-  const { cargado } = useApp();
+  const { cargado, modo, sesion } = useApp();
   if (!cargado) {
     return <View style={s.cargando}><ActivityIndicator size="large" color={color.marca} /></View>;
+  }
+  // Con servidor: sin sesión, solo el ingreso; con contraseña temporal, solo cambiarla.
+  if (modo === 'servidor' && !sesion) {
+    return <SafeAreaView style={s.solo}><IngresoScreen /><Toast /></SafeAreaView>;
+  }
+  if (modo === 'servidor' && sesion.usuario.debeCambiarClave) {
+    return <SafeAreaView style={s.solo}><CambiarClaveScreen /><Toast /></SafeAreaView>;
   }
   return (
     <NavigationContainer theme={tema}>
@@ -71,6 +81,8 @@ function Raiz() {
         <Pila.Screen name="Ficha" component={FichaScreen} options={{ title: 'Ferretería' }} />
         <Pila.Screen name="Visita" component={VisitaScreen} options={{ title: 'Registrar visita', presentation: 'modal' }} />
         <Pila.Screen name="Nueva" component={NuevaScreen} options={{ title: 'Nueva ferretería', presentation: 'modal' }} />
+        <Pila.Screen name="CambiarClave" component={CambiarClaveScreen} options={{ title: 'Cambiar contraseña' }} />
+        <Pila.Screen name="Usuarios" component={UsuariosScreen} options={{ title: 'Usuarios del equipo' }} />
       </Pila.Navigator>
       <Toast />
     </NavigationContainer>
@@ -90,5 +102,6 @@ export default function App() {
 
 const s = StyleSheet.create({
   marca: { fontSize: 24, fontWeight: '800', color: color.marca, letterSpacing: -0.3 },
-  cargando: { flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: color.fondo }
+  cargando: { flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: color.fondo },
+  solo: { flex: 1, backgroundColor: color.fondo }
 });

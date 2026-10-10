@@ -108,7 +108,6 @@
       vendedorActual: '',
       semilla: false,
       modo: '',            // 'servidor' una vez que el API respondió; nunca vuelve atrás
-      claveEquipo: '',
       ultimaSync: '',
       pendientes: { ferreterias: {}, visitas: {} }
     };
@@ -435,7 +434,7 @@
   // La clave del equipo nunca sale en el respaldo.
   function exportarBackup() {
     const d = leer();
-    delete d.claveEquipo;
+    delete d.claveEquipo;   // de versiones anteriores
     return JSON.stringify(d, null, 2);
   }
   function importarBackup(texto) {
@@ -447,7 +446,6 @@
     const nuevo = Object.assign(vacio(), d, {
       semilla: true,
       modo: actual.modo,
-      claveEquipo: actual.claveEquipo,
       ultimaSync: actual.ultimaSync,
       pendientes: vacio().pendientes
     });
@@ -478,17 +476,65 @@
     return leer().modo === 'servidor' ? 'servidor' : modo;
   }
 
-  function fijarClaveEquipo(clave) {
+  // ---------- sesión ----------
+  // Cada vendedor entra con su usuario y contraseña. La sesión ({ token, usuario }) va
+  // aparte de los datos: así nunca sale en un respaldo. El nombre del vendedor sale de
+  // su cuenta y el servidor firma las visitas con él.
+  const CLAVE_SESION = 'socoda.sesion';
+  function sesion() {
+    try {
+      const t = localStorage.getItem(CLAVE_SESION);
+      return t ? JSON.parse(t) : null;
+    } catch (e) {
+      return null;
+    }
+  }
+  function fijarSesion(s) {
+    localStorage.setItem(CLAVE_SESION, JSON.stringify(s));
     const datos = leer();
-    datos.claveEquipo = limpiar(clave);
+    datos.vendedorActual = s.usuario.nombre;
     guardar(datos);
+  }
+  function olvidarSesion() {
+    try { localStorage.removeItem(CLAVE_SESION); } catch (e) { /* nada que borrar */ }
+  }
+  function cabeceras() {
+    const s = sesion();
+    return Object.assign({ 'Content-Type': 'application/json' }, CABECERAS, s ? { Authorization: 'Bearer ' + s.token } : {});
+  }
+  // Devuelve el JSON o lanza el mensaje del servidor.
+  async function llamar(ruta, cuerpo) {
+    let res;
+    try {
+      res = await fetch(ruta, { method: 'POST', cache: 'no-store', headers: cabeceras(), body: JSON.stringify(cuerpo) });
+    } catch (e) {
+      throw new Error('Sin conexión con el servidor. Revisa la señal e intenta de nuevo.');
+    }
+    const j = await res.json().catch(() => ({}));
+    if (res.status === 401 && ruta !== 'api/ingresar') olvidarSesion();
+    if (!res.ok) throw new Error(j.error || 'El servidor no pudo completar la operación');
+    return j;
+  }
+  async function ingresar(usuario, clave) {
+    olvidarSesion();
+    const j = await llamar('api/ingresar', { usuario: usuario, clave: clave });
+    fijarSesion({ token: j.token, usuario: j.usuario });
+    return j.usuario;
+  }
+  async function cambiarClave(actual, nueva) {
+    const j = await llamar('api/clave', { actual: actual, nueva: nueva });
+    fijarSesion({ token: sesion().token, usuario: j.usuario });
+  }
+  async function salir() {
+    if (sesion()) await llamar('api/salir', {}).catch(() => {});
+    olvidarSesion();
   }
 
   function estadoSync() {
     const d = leer();
     return {
       modo: d.modo === 'servidor' ? 'servidor' : 'local',
-      tieneClave: !!d.claveEquipo,
+      conSesion: !!sesion(),
       pendientes: Object.keys(d.pendientes.ferreterias).length + Object.keys(d.pendientes.visitas).length,
       ultimaSync: d.ultimaSync
     };
@@ -510,7 +556,7 @@
   async function hacerSync() {
     const datos = leer();
     if (datos.modo !== 'servidor') return { estado: 'local' };
-    if (!datos.claveEquipo) return { estado: 'sin-clave' };
+    if (!sesion()) return { estado: 'sin-sesion' };
 
     const lote = {
       ferreterias: Object.values(datos.pendientes.ferreterias),
@@ -521,13 +567,15 @@
       res = await fetch('api/sync', {
         method: 'POST',
         cache: 'no-store',
-        headers: Object.assign({ 'Content-Type': 'application/json', 'X-Clave-Equipo': datos.claveEquipo }, CABECERAS),
+        headers: cabeceras(),
         body: JSON.stringify(lote)
       });
     } catch (e) {
       return { estado: 'sin-conexion' };
     }
-    if (res.status === 401) return { estado: 'clave-incorrecta' };
+    // Sesión vencida o usuario desactivado: los datos y lo pendiente se quedan aquí.
+    if (res.status === 401) { olvidarSesion(); return { estado: 'sin-sesion' }; }
+    if (res.status === 403) return { estado: 'cambiar-clave' };
     if (!res.ok) return { estado: 'error', mensaje: 'El servidor respondió ' + res.status };
     const resp = await res.json();
 
@@ -586,7 +634,10 @@
     exportarBackup: exportarBackup,
     importarBackup: importarBackup,
     detectarServidor: detectarServidor,
-    fijarClaveEquipo: fijarClaveEquipo,
+    sesion: sesion,
+    ingresar: ingresar,
+    cambiarClave: cambiarClave,
+    salir: salir,
     estadoSync: estadoSync,
     sincronizar: sincronizar,
     cargarSemillaSiVacio: cargarSemillaSiVacio

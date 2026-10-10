@@ -52,9 +52,7 @@ export default function HoyScreen({ navigation }) {
         <Text style={s.titulo}>Hoy</Text>
         <Text style={s.fecha}>{fecha}</Text>
       </View>
-      {modo === 'servidor' && !sync.tieneClave
-        ? <AvisoLinea texto="Falta la clave del equipo" accion="Escribirla" onPress={() => navigation.navigate('Datos')} /> : null}
-      {datos && !datos.vendedorActual
+      {modo === 'local' && datos && !datos.vendedorActual
         ? <AvisoLinea texto="Falta tu nombre de vendedor" accion="Escribirlo" onPress={() => navigation.navigate('Datos')} /> : null}
 
       <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={s.zonas}>

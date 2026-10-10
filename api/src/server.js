@@ -16,7 +16,7 @@ const pool = new pg.Pool({ connectionString: config.databaseUrl, max: 10 });
 pool.on('error', e => console.error('Conexión de Postgres perdida', e.message));
 
 const dirWeb = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../web');
-const servidor = crearApp({ pool, claveEquipo: config.claveEquipo, dirWeb })
+const servidor = crearApp({ pool, dirWeb })
   .listen(config.puerto, () => console.log('Ruta-viva API en el puerto ' + config.puerto));
 
 function cerrar() {

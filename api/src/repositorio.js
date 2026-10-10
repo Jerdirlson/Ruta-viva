@@ -14,7 +14,9 @@ function idDe(reg) {
 // - Visitas: solo se insertan; el id lo genera el teléfono, así que reenviar
 //   una visita (por ejemplo tras perder la señal a mitad de envío) no la duplica.
 // Lo inválido no tumba el lote: se devuelve en `rechazadas` con el motivo.
-export async function sincronizar(pool, lote) {
+// usuario: el de la sesión. Firma las visitas y los descartes: el nombre que mande el
+// celular se ignora, así nadie registra a nombre de otro.
+export async function sincronizar(pool, lote, usuario) {
   const ferreterias = Array.isArray(lote && lote.ferreterias) ? lote.ferreterias : [];
   const visitas = Array.isArray(lote && lote.visitas) ? lote.visitas : [];
   if (ferreterias.length + visitas.length > MAX_LOTE) {
@@ -33,6 +35,7 @@ export async function sincronizar(pool, lote) {
         continue;
       }
       const x = r.valor;
+      if (x.descartada) x.descartadaPor = usuario.nombre;
       // Una ubicación guardada nunca se pierde por un envío que no la trae
       // (por ejemplo, un celular con una versión vieja de la app): coalesce.
       // Igual con los campos de la migración 003, que llegan en null si no vienen.
@@ -84,10 +87,10 @@ export async function sincronizar(pool, lote) {
         continue;
       }
       await cliente.query(
-        `insert into visitas (id, ferreteria_id, fecha, vendedor, resultado, lineas, competencia, notas, creada)
-         values ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+        `insert into visitas (id, ferreteria_id, fecha, vendedor, resultado, lineas, competencia, notas, creada, usuario_id)
+         values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
          on conflict (id) do nothing`,
-        [v.id, v.ferreteriaId, v.fecha, v.vendedor, v.resultado, v.lineas, v.competencia, v.notas, v.creada]
+        [v.id, v.ferreteriaId, v.fecha, usuario.nombre, v.resultado, v.lineas, v.competencia, v.notas, v.creada, usuario.id]
       );
     }
 

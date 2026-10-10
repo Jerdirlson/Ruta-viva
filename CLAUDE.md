@@ -26,11 +26,13 @@ bash api/run-tests.sh                      # pruebas del API contra Postgres des
 
 **La ubicación de la ferretería** (`lat`, `lng`) sigue la misma regla de los tres lugares: migración 002, `validarCoordenadas` en `api/src/validar.js` y en `web/db.js`. Van juntas o no van. El servidor nunca borra una ubicación guardada con un envío que no la trae (`coalesce`).
 
+**Usuarios y sesiones** (migración 005, `api/src/usuarios.js`, `api/src/auth.js`): con servidor, cada vendedor entra con usuario y contraseña; ya no hay clave compartida. Contraseñas con scrypt; la sesión es un token aleatorio que la base guarda solo como hash SHA-256 (90 días, se renueva al usarse). En el celular el token va en `expo-secure-store` (`app/src/datos/sesion.js`), nunca en AsyncStorage ni en respaldos. **El servidor firma visitas y descartes con el usuario de la sesión**: el `vendedor` que mande el celular se ignora. Contraseña puesta por un administrador = temporal (`debe_cambiar_clave`): hasta cambiarla, el API solo permite `/api/clave`, `/api/yo` y `/api/salir`. Propia: mínimo 8 caracteres. Siempre queda un administrador activo. Desactivar o cerrar sesión es marcar, nunca borrar. Primer administrador: `docker compose exec api node src/usuarios-cli.js crear <usuario> "<Nombre>" admin`.
+
 **La posición del vendedor no se guarda ni se envía.** Solo vive en memoria (`ui.posicion` en `web/app.js`) para ordenar por cercanía. No agregar rastreo de vendedores.
 
 **Local-first.** `web/db.js` es la única parte de la app que toca `localStorage` y el API. Todo cambio se guarda primero en el teléfono y entra a la cola `pendientes`; `sincronizar()` la envía y recibe el estado completo. Los ids se generan en el teléfono para que reenviar no duplique.
 
-**Las visitas son historial: no se borran.** El rol `rutaviva_app` no tiene `DELETE`, y una prueba lo verifica intentándolo. No darle más permisos que `select, insert, update`.
+**Las visitas son historial: no se borran.** El rol `rutaviva_app` no tiene `DELETE` (tampoco sobre usuarios ni sesiones), y una prueba lo verifica intentándolo. No darle más permisos que `select, insert, update`.
 
 **Un esquema nuevo es una migración nueva** (`api/migrations/002_*.sql`). Nunca editar una migración ya aplicada.
 
@@ -45,4 +47,5 @@ bash api/run-tests.sh                      # pruebas del API contra Postgres des
 - Listo y probado en local: app, sincronización entre varios celulares, cola sin conexión, API, migraciones, respaldo y restauración, mapa, "Cerca de mí", ruta por cercanía y "Guardar ubicación aquí".
 - App nativa (`app/`): compila para Android e iOS; probada en su versión web con Playwright (modo local y servidor). Falta probarla en un celular físico (Expo Go) y generar el APK con EAS.
 - Censo inicial: 833 ferreterías y depósitos de Bucaramanga, Floridablanca, Girón y Piedecuesta sacados de Google Maps (oct. 2026), en `api/datos-google/ferreterias-google.csv` (no se sube al repo).
-- Pendiente: fotos de la fachada (migración 005), elegir servidor y desplegar, clave de Google Maps para el APK de Android.
+- Producción: VM de Google Cloud (ver deploy/README.md), HTTPS con Caddy en https://136-108-178-241.sslip.io.
+- Pendiente: fotos de la fachada (migración 006), clave de Google Maps para el APK de Android, nota de voz + IA para registrar visitas.

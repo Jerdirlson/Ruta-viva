@@ -8,9 +8,9 @@ import { useApp } from '../estado/AppContext';
 export function textoEstadoSync(sync, modo) {
   if (modo !== 'servidor') return 'Modo local';
   if (sync.sincronizando) return 'Sincronizando…';
-  if (!sync.tieneClave) return 'Falta la clave del equipo';
+  if (!sync.conSesion) return 'Sin sesión';
   const pend = sync.pendientes ? ' · ' + sync.pendientes + ' sin enviar' : '';
-  if (sync.estado === 'clave-incorrecta') return 'Clave incorrecta' + pend;
+  if (sync.estado === 'cambiar-clave') return 'Cambia tu contraseña' + pend;
   if (sync.estado === 'sin-conexion') return 'Sin conexión' + pend;
   if (sync.estado === 'error') return 'Error del servidor' + pend;
   if (sync.pendientes) return sync.pendientes + ' sin enviar';
@@ -23,7 +23,7 @@ export function textoEstadoSync(sync, modo) {
 
 function tono(sync, modo) {
   if (modo !== 'servidor' || sync.sincronizando) return 'neutro';
-  if (!sync.tieneClave || sync.pendientes || ['clave-incorrecta', 'sin-conexion', 'error'].includes(sync.estado)) return 'alerta';
+  if (!sync.conSesion || sync.pendientes || ['cambiar-clave', 'sin-conexion', 'error'].includes(sync.estado)) return 'alerta';
   return sync.ultima ? 'ok' : 'neutro';
 }
 

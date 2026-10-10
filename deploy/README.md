@@ -36,13 +36,21 @@ cp .env.example .env
 chmod 600 .env
 # Generar los secretos (no inventarlos):
 #   POSTGRES_PASSWORD y APP_DB_PASSWORD:  openssl rand -hex 32
-#   CLAVE_EQUIPO:                          openssl rand -hex 16
 docker compose up -d --build
 docker compose ps        # db y api "healthy", migrar "Exited (0)"
 docker compose --profile tunel up -d     # cuando estén NGROK_AUTHTOKEN y NGROK_DOMAIN
 ```
 
-Para entregar la clave del equipo a los vendedores, úsala por un canal privado. Cambiarla obliga a escribirla de nuevo en cada celular.
+## Usuarios
+
+Cada vendedor entra con su usuario y contraseña. El primer administrador se crea en el servidor; la contraseña temporal sale una sola vez y se pide cambiarla al entrar (mínimo 8 caracteres):
+
+```bash
+docker compose exec api node src/usuarios-cli.js crear jerdirlson "Jerdirlson Santamaría" admin
+docker compose exec api node src/usuarios-cli.js listar
+```
+
+Los demás los crea un administrador desde la app (Datos → Usuarios): crear, desactivar (cierra sus sesiones) y poner contraseña temporal.
 
 ## Cómo funciona la seguridad de la base
 
@@ -85,5 +93,5 @@ Detiene el API, reemplaza los datos (pide escribir `restaurar` para confirmar), 
 ## Problemas comunes
 
 - **"Invalid URL" en los logs del API:** una contraseña generada con base64 tiene `/`, `+` o `=`. Usa `openssl rand -hex 32`.
-- **El celular dice "Clave del equipo incorrecta":** compara con `CLAVE_EQUIPO` de `.env`.
+- **Nadie puede entrar (se olvidó la contraseña del administrador):** `docker compose exec api node src/usuarios-cli.js clave <usuario>` le pone una contraseña temporal nueva.
 - **`migrar` termina con error:** `docker logs rutaviva-migrar`. El API no arranca hasta que `migrar` termine bien, a propósito.

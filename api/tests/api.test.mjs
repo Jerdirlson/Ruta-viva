@@ -9,11 +9,14 @@ import pg from 'pg';
 import { migrar } from '../src/migrar.js';
 import { crearApp } from '../src/app.js';
 import { MAX_LOTE } from '../src/repositorio.js';
+import { crearUsuario } from '../src/usuarios.js';
+import { crearLimitador, MAX_FALLOS } from '../src/auth.js';
 
 const { RV_TEST_ADMIN_URL, RV_TEST_APP_URL, RV_TEST_APP_PASSWORD } = process.env;
 const omitir = !RV_TEST_ADMIN_URL || !RV_TEST_APP_URL;
 const aqui = path.dirname(fileURLToPath(import.meta.url));
-const CLAVE = 'clave-de-prueba-0123456789abcdef';
+// Ana es administradora y Luis vendedor; entran con contraseña temporal y la cambian.
+let TOKEN = '', TOKEN_LUIS = '';
 
 let pool, servidor, base;
 
@@ -28,9 +31,13 @@ before(async () => {
   await migrar(opciones);
   await migrar(opciones); // idempotente: la segunda vez no aplica nada ni falla
   pool = new pg.Pool({ connectionString: RV_TEST_APP_URL, max: 4 });
-  const app = crearApp({ pool, claveEquipo: CLAVE, dirWeb: path.join(aqui, '../../web') });
+  const app = crearApp({ pool, dirWeb: path.join(aqui, '../../web'), limitador: crearLimitador() });
   await new Promise(r => { servidor = app.listen(0, '127.0.0.1', r); });
   base = 'http://127.0.0.1:' + servidor.address().port;
+  await crearUsuario(pool, { usuario: 'Ana', nombre: 'Ana', rol: 'admin', clave: '1234' });
+  await crearUsuario(pool, { usuario: 'luis', nombre: 'Luis', rol: 'vendedor', clave: '1234' });
+  TOKEN = await entrarYCambiar('ana', '1234', 'clave-de-ana-1');
+  TOKEN_LUIS = await entrarYCambiar('luis', '1234', 'clave-de-luis-1');
 });
 
 after(async () => {
@@ -39,11 +46,19 @@ after(async () => {
   await pool.end();
 });
 
-const sync = (cuerpo, clave = CLAVE) => fetch(base + '/api/sync', {
-  method: 'POST',
-  headers: { 'Content-Type': 'application/json', 'X-Clave-Equipo': clave },
-  body: typeof cuerpo === 'string' ? cuerpo : JSON.stringify(cuerpo)
+const pedir = (ruta, cuerpo, token, metodo = 'POST') => fetch(base + ruta, {
+  method: metodo,
+  headers: Object.assign({ 'Content-Type': 'application/json' }, token ? { Authorization: 'Bearer ' + token } : {}),
+  body: cuerpo === undefined ? undefined : typeof cuerpo === 'string' ? cuerpo : JSON.stringify(cuerpo)
 });
+const sync = (cuerpo, token = TOKEN) => pedir('/api/sync', cuerpo, token);
+const entrar = (usuario, clave) => pedir('/api/ingresar', { usuario, clave });
+async function entrarYCambiar(usuario, temporal, nueva) {
+  const { token } = await (await entrar(usuario, temporal)).json();
+  const r = await pedir('/api/clave', { actual: temporal, nueva }, token);
+  assert.equal(r.status, 200);
+  return token;
+}
 
 const ferre = (id, extra = {}) => Object.assign({ id, nombre: 'Ferretería ' + id, municipio: 'Bucaramanga', zona: 'Zona 1' }, extra);
 const visita = (id, ferreteriaId, extra = {}) => Object.assign({
@@ -58,9 +73,9 @@ test('salud responde e identifica la app', { skip: omitir }, async () => {
   assert.equal(r.headers.get('x-content-type-options'), 'nosniff');
 });
 
-test('sin clave o con clave equivocada: 401 y no se escribe nada', { skip: omitir }, async () => {
+test('sin sesión o con un token inventado: 401 y no se escribe nada', { skip: omitir }, async () => {
   assert.equal((await sync({ ferreterias: [ferre('intruso')] }, '')).status, 401);
-  assert.equal((await sync({ ferreterias: [ferre('intruso')] }, 'otra-clave')).status, 401);
+  assert.equal((await sync({ ferreterias: [ferre('intruso')] }, 'token-inventado')).status, 401);
   const { rows } = await pool.query("select 1 from ferreterias where id = 'intruso'");
   assert.equal(rows.length, 0);
 });
@@ -124,6 +139,8 @@ test('el rol de la app no puede borrar ni cambiar el esquema', { skip: omitir },
   const intentos = [
     'delete from visitas',
     'delete from ferreterias',
+    'delete from usuarios',
+    'delete from sesiones',
     'truncate visitas',
     'drop table visitas',
     'alter table ferreterias add column x int',
@@ -231,4 +248,92 @@ test('descartar una ferretería, conservar el descarte y reactivarla', { skip: o
   f = j.ferreterias.find(x => x.id === 'x1');
   assert.deepEqual([f.descartada, f.descartadaPor, f.descartadaFecha], ['', '', '']);
   assert.ok(j.visitas.some(v => v.id === 'vx1'));
+});
+
+// ---------- usuarios y sesiones ----------
+
+test('ingresar: usuario sin importar mayúsculas; contraseña mala o usuario inexistente dan el mismo error', { skip: omitir }, async () => {
+  const ok = await entrar(' ANA ', 'clave-de-ana-1');
+  assert.equal(ok.status, 200);
+  const j = await ok.json();
+  assert.deepEqual([j.usuario.usuario, j.usuario.nombre, j.usuario.rol, j.usuario.debeCambiarClave], ['ana', 'Ana', 'admin', false]);
+  assert.ok(!('clave_hash' in j.usuario));
+  const mala = await (await entrar('ana', 'otra')).json();
+  const nadie = await (await entrar('nadie', 'otra')).json();
+  assert.deepEqual(mala, nadie);
+});
+
+test('la contraseña se guarda como hash y la sesión también', { skip: omitir }, async () => {
+  const admin = new pg.Client({ connectionString: RV_TEST_ADMIN_URL });
+  await admin.connect();
+  try {
+    const u = (await admin.query("select clave_hash from usuarios where usuario = 'ana'")).rows[0];
+    assert.match(u.clave_hash, /^scrypt\$/);
+    assert.ok(!u.clave_hash.includes('clave-de-ana-1'));
+    const n = (await admin.query('select count(*)::int as n from sesiones where token_hash = $1', [TOKEN])).rows[0].n;
+    assert.equal(n, 0);   // el token en claro no está en la base
+  } finally {
+    await admin.end();
+  }
+});
+
+test('con contraseña temporal solo se puede cambiarla; la nueva debe tener 8 o más', { skip: omitir }, async () => {
+  await crearUsuario(pool, { usuario: 'temporal', nombre: 'Temporal', rol: 'vendedor', clave: '12345' });
+  const { token, usuario } = await (await entrar('temporal', '12345')).json();
+  assert.equal(usuario.debeCambiarClave, true);
+  const r = await sync({}, token);
+  assert.equal(r.status, 403);
+  assert.equal((await r.json()).debeCambiarClave, true);
+  assert.equal((await pedir('/api/clave', { actual: '12345', nueva: 'corta' }, token)).status, 400);
+  assert.equal((await pedir('/api/clave', { actual: 'mala', nueva: 'una-larga-1' }, token)).status, 400);
+  assert.equal((await pedir('/api/clave', { actual: '12345', nueva: 'una-larga-1' }, token)).status, 200);
+  assert.equal((await sync({}, token)).status, 200);
+  assert.equal((await entrar('temporal', '12345')).status, 401);
+});
+
+test('el servidor firma las visitas con quien inició sesión, no con lo que manda el celular', { skip: omitir }, async () => {
+  await sync({ ferreterias: [ferre('s1')] });
+  const j = await (await sync({ visitas: [visita('vs1', 's1', { vendedor: 'Ana' })] }, TOKEN_LUIS)).json();
+  assert.equal(j.visitas.find(v => v.id === 'vs1').vendedor, 'Luis');
+  const k = await (await sync({ ferreterias: [ferre('s1', { descartada: 'cerro', descartadaPor: 'Ana', descartadaFecha: '2026-10-10' })] }, TOKEN_LUIS)).json();
+  assert.equal(k.ferreterias.find(f => f.id === 's1').descartadaPor, 'Luis');
+});
+
+test('salir cierra la sesión', { skip: omitir }, async () => {
+  const { token } = await (await entrar('luis', 'clave-de-luis-1')).json();
+  assert.equal((await pedir('/api/yo', undefined, token, 'GET')).status, 200);
+  assert.equal((await pedir('/api/salir', {}, token)).status, 200);
+  assert.equal((await pedir('/api/yo', undefined, token, 'GET')).status, 401);
+});
+
+test('administrar usuarios: solo admin; desactivar cierra sus sesiones; contraseña temporal nueva', { skip: omitir }, async () => {
+  assert.equal((await pedir('/api/usuarios', undefined, TOKEN_LUIS, 'GET')).status, 403);
+  assert.equal((await pedir('/api/usuarios', { usuario: 'x', nombre: 'X', rol: 'admin', clave: '1234' }, TOKEN_LUIS)).status, 403);
+  const c = await pedir('/api/usuarios', { usuario: 'Pedro.Gomez', nombre: 'Pedro Gómez', rol: 'vendedor', clave: '12345' }, TOKEN);
+  assert.equal(c.status, 201);
+  const pedro = (await c.json()).usuario;
+  assert.equal(pedro.usuario, 'pedro.gomez');
+  assert.equal((await pedir('/api/usuarios', { usuario: 'pedro.gomez', nombre: 'Otro', rol: 'vendedor', clave: '12345' }, TOKEN)).status, 400);
+  assert.equal((await pedir('/api/usuarios', { usuario: 'con espacio', nombre: 'X', rol: 'vendedor', clave: '12345' }, TOKEN)).status, 400);
+  const { token } = await (await entrar('pedro.gomez', '12345')).json();
+  assert.equal((await pedir('/api/usuarios/' + pedro.id, { activo: false }, TOKEN, 'PATCH')).status, 200);
+  assert.equal((await pedir('/api/yo', undefined, token, 'GET')).status, 401);
+  assert.equal((await entrar('pedro.gomez', '12345')).status, 401);
+  const r = await pedir('/api/usuarios/' + pedro.id, { activo: true, clave: 'nueva1' }, TOKEN, 'PATCH');
+  assert.equal((await r.json()).usuario.debeCambiarClave, true);
+  assert.equal((await entrar('pedro.gomez', 'nueva1')).status, 200);
+  const lista = (await (await pedir('/api/usuarios', undefined, TOKEN, 'GET')).json()).usuarios;
+  assert.ok(lista.some(u => u.usuario === 'pedro.gomez') && lista.every(u => !('clave_hash' in u)));
+});
+
+test('siempre queda un administrador: no puede desactivarse ni quitarse el rol', { skip: omitir }, async () => {
+  const yo = (await (await pedir('/api/yo', undefined, TOKEN, 'GET')).json()).usuario;
+  assert.equal((await pedir('/api/usuarios/' + yo.id, { activo: false }, TOKEN, 'PATCH')).status, 400);
+  assert.equal((await pedir('/api/usuarios/' + yo.id, { rol: 'vendedor' }, TOKEN, 'PATCH')).status, 400);
+});
+
+test('demasiados intentos fallidos bloquean el ingreso un rato', { skip: omitir }, async () => {
+  for (let i = 0; i < MAX_FALLOS; i++) await entrar('luis', 'mala-' + i);
+  const r = await entrar('luis', 'clave-de-luis-1');
+  assert.equal(r.status, 429);
 });

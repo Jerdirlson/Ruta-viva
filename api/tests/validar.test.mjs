@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { validarFerreteria, validarVisita, fechaValida, LIMITES } from '../src/validar.js';
+import { validarUsuarioNuevo, validarClave, validarFerreteria, validarVisita, fechaValida, LIMITES } from '../src/validar.js';
 import { leerConfig, erroresConfig } from '../src/config.js';
 
 const visita = (extra = {}) => Object.assign({
@@ -70,10 +70,9 @@ test('fechaValida exige fecha real entre 2000 y 2100', () => {
   assert.equal(fechaValida(20261010), false);
 });
 
-test('config: sin base o con clave corta, el API no arranca', () => {
-  assert.equal(erroresConfig(leerConfig({})).length, 2);
-  assert.equal(erroresConfig(leerConfig({ DATABASE_URL: 'postgres://x', CLAVE_EQUIPO: 'corta' })).length, 1);
-  assert.deepEqual(erroresConfig(leerConfig({ DATABASE_URL: 'postgres://x', CLAVE_EQUIPO: 'a'.repeat(32) })), []);
+test('config: sin base, el API no arranca', () => {
+  assert.equal(erroresConfig(leerConfig({})).length, 1);
+  assert.deepEqual(erroresConfig(leerConfig({ DATABASE_URL: 'postgres://x' })), []);
 });
 
 test('ubicación: opcional, completa y dentro de rango', async () => {
@@ -95,4 +94,18 @@ test('descartar: motivo, quién y fecha válidos; reactivar con vacíos', () => 
   assert.deepEqual([activa.descartada, activa.descartadaPor, activa.descartadaFecha], ['', '', '']);
   assert.match(validarFerreteria(Object.assign({}, base, { descartada: 'borrada' })).error, /descarte/);
   assert.match(validarFerreteria(Object.assign({}, base, { descartadaFecha: '2026-13-01' })).error, /Fecha de descarte/);
+});
+
+test('usuarios: formato del usuario, rol y contraseña (temporal corta, propia de 8 o más)', () => {
+  const ok = validarUsuarioNuevo({ usuario: ' Norberto.Caro ', nombre: ' Norberto Caro ', rol: 'vendedor', clave: '12345' }).valor;
+  assert.deepEqual([ok.usuario, ok.nombre, ok.rol], ['norberto.caro', 'Norberto Caro', 'vendedor']);
+  assert.match(validarUsuarioNuevo({ usuario: 'con espacio', nombre: 'X', rol: 'vendedor', clave: '12345' }).error, /usuario/);
+  assert.match(validarUsuarioNuevo({ usuario: 'josé', nombre: 'X', rol: 'vendedor', clave: '12345' }).error, /usuario/);
+  assert.match(validarUsuarioNuevo({ usuario: 'ab', nombre: 'X', rol: 'vendedor', clave: '12345' }).error, /usuario/);
+  assert.match(validarUsuarioNuevo({ usuario: 'pepe', nombre: 'X', rol: 'jefe', clave: '12345' }).error, /Rol/);
+  assert.match(validarUsuarioNuevo({ usuario: 'pepe', nombre: '', rol: 'vendedor', clave: '12345' }).error, /nombre/);
+  assert.match(validarClave('1234567', false).error, /8/);
+  assert.ok(validarClave('12345678', false).valor);
+  assert.ok(validarClave('1234', true).valor);
+  assert.match(validarClave('123', true).error, /4/);
 });

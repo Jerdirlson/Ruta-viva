@@ -46,7 +46,7 @@ if [ ! -f .env ]; then
   sed -i \
     -e "s/^POSTGRES_PASSWORD=$/POSTGRES_PASSWORD=$(openssl rand -hex 32)/" \
     -e "s/^APP_DB_PASSWORD=$/APP_DB_PASSWORD=$(openssl rand -hex 32)/" \
-    -e "s/^CLAVE_EQUIPO=$/CLAVE_EQUIPO=$(openssl rand -hex 16)/" \
+\
     .env
   echo "   Contraseñas generadas."
 else
@@ -71,4 +71,8 @@ LINEA="15 2 * * * ${DEPLOY}/backup.sh >> /var/log/rutaviva-backup.log 2>&1"
 echo
 echo "Listo. La app queda en https://${DOMINIO}"
 echo "El certificado HTTPS puede tardar un minuto la primera vez."
-echo "La clave del equipo para los celulares está en ${DEPLOY}/.env (CLAVE_EQUIPO). No la compartas por chat."
+if ! docker compose exec -T api node src/usuarios-cli.js listar | grep -q ' · admin · activo'; then
+  echo
+  echo "Falta el primer administrador. Créalo con (la contraseña temporal sale una sola vez):"
+  echo "  cd ${DEPLOY} && sudo docker compose exec api node src/usuarios-cli.js crear <usuario> \"<Nombre>\" admin"
+fi

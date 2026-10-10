@@ -2,7 +2,7 @@
 //
 // Corre con el usuario DUEÑO de la base (DATABASE_URL_ADMIN), nunca con el de la app.
 // El API se conecta con `rutaviva_app`: no es dueño de nada, no puede borrar ni
-// cambiar el esquema, solo leer, insertar y actualizar ferreterías y visitas.
+// cambiar el esquema, solo leer, insertar y actualizar ferreterías, visitas, usuarios y sesiones.
 //
 //   DATABASE_URL_ADMIN=... APP_DB_PASSWORD=... node src/migrar.js
 import fs from 'node:fs';
@@ -68,7 +68,7 @@ async function asegurarRolApp(cliente, clave) {
   await cliente.query('revoke create on schema public from public');
   await cliente.query('grant usage on schema public to ' + ROL_APP);
   await cliente.query('revoke all on all tables in schema public from ' + ROL_APP);
-  await cliente.query('grant select, insert, update on ferreterias, visitas to ' + ROL_APP);
+  await cliente.query('grant select, insert, update on ferreterias, visitas, usuarios, sesiones to ' + ROL_APP);
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {

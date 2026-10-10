@@ -18,19 +18,18 @@ function Bloque({ titulo, children }) {
 }
 
 // Confirmación nativa (en la web de prueba, confirm del navegador).
-function confirmar(titulo, mensaje) {
+function confirmar(titulo, mensaje, si = 'Restaurar') {
   if (Platform.OS === 'web') return Promise.resolve(window.confirm(titulo + '\n\n' + mensaje));
   return new Promise(resolver => Alert.alert(titulo, mensaje, [
     { text: 'Cancelar', style: 'cancel', onPress: () => resolver(false) },
-    { text: 'Restaurar', style: 'destructive', onPress: () => resolver(true) }
+    { text: si, style: 'destructive', onPress: () => resolver(true) }
   ]));
 }
 
-export default function DatosScreen() {
+export default function DatosScreen({ navigation }) {
   const app = useApp();
-  const { datos, censo, modo, sync, avisar } = app;
+  const { datos, censo, modo, sync, sesion, avisar } = app;
   const [vendedor, setVendedor] = useState('');
-  const [clave, setClave] = useState('');
   useEffect(() => { if (datos) setVendedor(datos.vendedorActual); }, [datos && datos.vendedorActual]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const conError = fn => async () => {
@@ -53,26 +52,42 @@ export default function DatosScreen() {
     avisar('Respaldo restaurado');
   });
 
+  // Lo que no se ha enviado se queda en el celular y se envía cuando alguien vuelva a entrar.
+  const salir = conError(async () => {
+    const aviso = sync.pendientes
+      ? 'Hay ' + sync.pendientes + ' cambio(s) sin enviar. Se quedan en este celular y se envían cuando vuelvas a entrar.'
+      : 'Tendrás que escribir tu usuario y contraseña para volver a entrar.';
+    if (!(await confirmar('¿Cerrar sesión?', aviso, 'Cerrar sesión'))) return;
+    await app.salir();
+  });
+
   return (
     <ScrollView style={s.pantalla} contentContainerStyle={s.contenido} keyboardShouldPersistTaps="handled">
       <Text style={s.titulo}>Datos</Text>
       <Text style={s.ayuda}>{censo.length + ' ferreterías en este celular'}</Text>
 
-      <Bloque titulo="Tu nombre (vendedor)">
+      {modo === 'servidor' && sesion ? (
+        <Bloque titulo="Tu cuenta">
+          <Text style={s.cuenta} testID="cuenta-nombre">{sesion.usuario.nombre}</Text>
+          <Text style={s.ayuda}>{sesion.usuario.usuario + ' · ' + (sesion.usuario.rol === 'admin' ? 'Administrador' : 'Vendedor')}</Text>
+          <Text style={s.ayuda}>Tus visitas quedan registradas a tu nombre.</Text>
+          {sesion.usuario.rol === 'admin'
+            ? <Boton titulo="Usuarios del equipo" onPress={() => navigation.navigate('Usuarios')} testID="ir-usuarios" /> : null}
+          <Boton titulo="Cambiar contraseña" onPress={() => navigation.navigate('CambiarClave')} testID="ir-cambiar-clave" />
+          <Boton titulo="Cerrar sesión" onPress={salir} testID="salir" />
+        </Bloque>
+      ) : null}
+
+      {modo === 'local' ? <Bloque titulo="Tu nombre (vendedor)">
         <TextInput value={vendedor} onChangeText={setVendedor} onEndEditing={() => { app.fijarVendedor(vendedor); avisar('Nombre guardado'); }}
           onBlur={() => app.fijarVendedor(vendedor)} maxLength={LIMITES.vendedor} placeholder="Nombre y apellido"
           placeholderTextColor={color.suave} style={s.campo} testID="vendedor" returnKeyType="done" />
         <Text style={s.ayuda}>Aparece en cada visita que registres.</Text>
-      </Bloque>
+      </Bloque> : null}
 
       <Bloque titulo="Sincronización">
         {modo === 'servidor' ? (
           <>
-            <TextInput value={clave} onChangeText={setClave} secureTextEntry autoCapitalize="none" autoCorrect={false}
-              placeholder={sync.tieneClave ? 'Guardada. Escribe otra para cambiarla' : 'Clave del equipo (la entrega el administrador)'}
-              placeholderTextColor={color.suave} style={s.campo} testID="clave" returnKeyType="done"
-              onSubmitEditing={() => { if (clave.trim()) { app.fijarClave(clave); setClave(''); } }} />
-            {clave.trim() ? <Boton titulo="Guardar clave" onPress={() => { app.fijarClave(clave); setClave(''); }} testID="guardar-clave" /> : null}
             <Text style={s.ayuda} testID="estado-sync-datos">{textoEstadoSync(sync, modo)}</Text>
             <Boton titulo="Sincronizar ahora" tipo="pri" onPress={app.sincronizar} testID="sincronizar" />
             <Text style={s.mini}>{'Servidor: ' + API_URL}</Text>
@@ -122,5 +137,6 @@ const s = StyleSheet.create({
     color: color.texto
   },
   ayuda: { fontSize: letra.chica, color: color.suave },
-  mini: { fontSize: letra.mini, color: color.suave }
+  mini: { fontSize: letra.mini, color: color.suave },
+  cuenta: { fontSize: letra.normal, fontWeight: '800', color: color.texto }
 });

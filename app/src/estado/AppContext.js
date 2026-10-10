@@ -3,6 +3,10 @@
 //
 // Local-first: todo cambio se guarda primero en el teléfono. Con servidor
 // (EXPO_PUBLIC_API_URL), entra además a la cola de pendientes y se envía cuando hay señal.
+//
+// Con servidor, cada vendedor entra con su usuario y contraseña (src/datos/sesion.js
+// guarda el token cifrado). El nombre del vendedor sale de su cuenta y el servidor
+// firma las visitas con él. Sin servidor (modo local), el nombre se escribe a mano.
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { Alert, AppState, Platform } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -10,6 +14,7 @@ import * as R from '../nucleo/reglas';
 import { importarCSV as importarCSVPuro, exportarCSV as exportarCSVPuro } from '../nucleo/csv';
 import { armarLote, aplicarRespuesta, contarPendientes } from '../nucleo/sync';
 import { obtenerPosicion } from '../datos/ubicacion';
+import { leerSesion, guardarSesion, borrarSesion } from '../datos/sesion';
 import { distanciaM, textoDistancia, CONFIRMAR_MOVER_M } from '../nucleo/geo';
 import ejemplo from '../datos/ejemplo.json';
 
@@ -38,6 +43,9 @@ export function AppProvider({ children }) {
   const [posicion, setPosicion] = useState(null);
   const [sync, setSync] = useState({ estado: CON_SERVIDOR ? 'pendiente' : 'local', sincronizando: false });
   const [aviso, setAviso] = useState(null);
+  // null = sin sesión. { token, usuario: { id, usuario, nombre, rol, debeCambiarClave } }
+  const [sesion, setSesion] = useState(null);
+  const sesionRef = useRef(null);
   const enCurso = useRef(null);
   const temporizador = useRef(null);
 
@@ -54,31 +62,61 @@ export function AppProvider({ children }) {
     return resultado;
   }, [avisar]);
 
+  // ---------- servidor y sesión ----------
+  // conSesion = false para /api/ingresar.
+  const pedir = (ruta, cuerpo, conSesion = true, metodo = 'POST') => fetch(API_URL + ruta, {
+    method: metodo,
+    headers: Object.assign(
+      { 'Content-Type': 'application/json', 'ngrok-skip-browser-warning': '1' },
+      conSesion && sesionRef.current ? { Authorization: 'Bearer ' + sesionRef.current.token } : {}
+    ),
+    body: cuerpo === undefined ? undefined : JSON.stringify(cuerpo)
+  });
+  // Llamada que devuelve el JSON o lanza el mensaje del servidor.
+  async function llamar(ruta, cuerpo, metodo = 'POST') {
+    let res;
+    try {
+      res = await pedir(ruta, cuerpo, true, metodo);
+    } catch (e) {
+      throw new Error('Sin conexión con el servidor. Revisa la señal e intenta de nuevo.');
+    }
+    const j = await res.json().catch(() => ({}));
+    if (res.status === 401) { await olvidarSesion(); throw new Error(j.error || 'Tu sesión venció: vuelve a entrar'); }
+    if (!res.ok) throw new Error(j.error || 'El servidor no pudo completar la operación');
+    return j;
+  }
+  async function fijarSesion(s) {
+    await guardarSesion(s);
+    sesionRef.current = s;
+    setSesion(s);
+    actualizar(d => { d.vendedorActual = s.usuario.nombre; });
+  }
+  async function olvidarSesion() {
+    await borrarSesion();
+    sesionRef.current = null;
+    setSesion(null);
+  }
+
   // ---------- sincronización ----------
   const hacerSync = useCallback(async () => {
     const d = datosRef.current;
     if (!CON_SERVIDOR || !d) return { estado: 'local' };
-    if (!d.claveEquipo) return { estado: 'sin-clave' };
+    if (!sesionRef.current) return { estado: 'sin-sesion' };
     const lote = armarLote(d);
     let res;
     try {
-      res = await fetch(API_URL + '/api/sync', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'X-Clave-Equipo': d.claveEquipo,
-          'ngrok-skip-browser-warning': '1'
-        },
-        body: JSON.stringify(lote)
-      });
+      res = await pedir('/api/sync', lote);
     } catch (e) {
       return { estado: 'sin-conexion' };
     }
-    if (res.status === 401) return { estado: 'clave-incorrecta' };
+    // Sesión vencida o usuario desactivado: los datos y lo pendiente se quedan en el
+    // celular; al volver a entrar se envían.
+    if (res.status === 401) { await olvidarSesion(); return { estado: 'sin-sesion' }; }
+    if (res.status === 403) return { estado: 'cambiar-clave' };
     if (!res.ok) return { estado: 'error' };
     const resp = await res.json();
     return actualizar(copia => aplicarRespuesta(copia, lote, resp));
-  }, [actualizar]);
+  }, [actualizar]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const sincronizar = useCallback(async manual => {
     if (!CON_SERVIDOR) {
@@ -97,8 +135,8 @@ export function AppProvider({ children }) {
     if (rech.length) avisar(rech.length + ' registro(s) rechazado(s) por el servidor: ' + rech[0].motivo);
     else if (manual) avisar({
       ok: 'Sincronizado',
-      'sin-clave': 'Escribe la clave del equipo en Datos',
-      'clave-incorrecta': 'Clave del equipo incorrecta',
+      'sin-sesion': 'Tu sesión venció: vuelve a entrar',
+      'cambiar-clave': 'Cambia tu contraseña para seguir',
       'sin-conexion': 'Sin conexión: los cambios quedan guardados en el celular',
       error: 'El servidor tuvo un problema; se reintenta después'
     }[r.estado] || 'Listo');
@@ -126,6 +164,12 @@ export function AppProvider({ children }) {
         d.ferreterias = ejemplo.map(f => R.construirFerreteria(f, f.id));
         d.semilla = true;
         AsyncStorage.setItem(CLAVE_ALMACEN, JSON.stringify(d)).catch(() => {});
+      }
+      if (CON_SERVIDOR) {
+        const s = await leerSesion();
+        sesionRef.current = s;
+        setSesion(s);
+        if (s) d.vendedorActual = s.usuario.nombre;
       }
       datosRef.current = d;
       setDatos(d);
@@ -161,10 +205,33 @@ export function AppProvider({ children }) {
     exportarCSV: () => exportarCSVPuro(datosRef.current),
     respaldo: () => R.respaldoDe(datosRef.current),
     fijarVendedor: nombre => actualizar(d => { d.vendedorActual = R.recortar('vendedor', nombre); }),
-    fijarClave: clave => {
-      actualizar(d => { d.claveEquipo = R.limpiar(clave); });
-      return sincronizar(true);
+
+    // ---------- sesión y usuarios ----------
+    ingresar: async (usuario, clave) => {
+      let res;
+      try {
+        res = await pedir('/api/ingresar', { usuario, clave }, false);
+      } catch (e) {
+        throw new Error('Sin conexión con el servidor. Revisa la señal e intenta de nuevo.');
+      }
+      const j = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(j.error || 'No se pudo entrar');
+      await fijarSesion({ token: j.token, usuario: j.usuario });
+      if (!j.usuario.debeCambiarClave) sincronizar(false);
+      return j.usuario;
     },
+    cambiarClave: async (actual, nueva) => {
+      const j = await llamar('/api/clave', { actual, nueva });
+      await fijarSesion({ token: sesionRef.current.token, usuario: j.usuario });
+      sincronizar(false);
+    },
+    salir: async () => {
+      if (sesionRef.current) await pedir('/api/salir', {}).catch(() => {});
+      await olvidarSesion();
+    },
+    listarUsuarios: async () => (await llamar('/api/usuarios', undefined, 'GET')).usuarios,
+    crearUsuario: async u => (await llamar('/api/usuarios', u)).usuario,
+    actualizarUsuario: async (id, cambios) => (await llamar('/api/usuarios/' + encodeURIComponent(id), cambios, 'PATCH')).usuario,
     sincronizar: () => sincronizar(true),
 
     ubicarme: async () => {
@@ -203,7 +270,7 @@ export function AppProvider({ children }) {
       }
     },
     avisar
-  }), [conCambio, actualizar, sincronizar, avisar]);
+  }), [conCambio, actualizar, sincronizar, avisar]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const censo = useMemo(() => (datos ? R.censoDe(datos) : []), [datos]);
   const pendientesSync = datos ? contarPendientes(datos) : 0;
@@ -213,7 +280,8 @@ export function AppProvider({ children }) {
     datos,
     censo,
     modo: CON_SERVIDOR ? 'servidor' : 'local',
-    sync: { ...sync, pendientes: pendientesSync, ultima: datos ? datos.ultimaSync : '', tieneClave: !!(datos && datos.claveEquipo) },
+    sync: { ...sync, pendientes: pendientesSync, ultima: datos ? datos.ultimaSync : '', conSesion: !!sesion },
+    sesion,
     posicion,
     aviso,
     ...acciones

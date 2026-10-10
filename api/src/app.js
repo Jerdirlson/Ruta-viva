@@ -1,19 +1,24 @@
 // Aplicación Express: API de sincronización y la app web (carpeta web/) desde el mismo origen.
-import crypto from 'node:crypto';
+//
+// Cada vendedor entra con su usuario y contraseña (POST /api/ingresar) y recibe un token
+// de sesión que manda en `Authorization: Bearer <token>`. Ver src/usuarios.js y src/auth.js.
 import express from 'express';
 import { sincronizar, ErrorCliente } from './repositorio.js';
+import { ingresar, sesionDe, cerrarSesion, cambiarClave, listarUsuarios, crearUsuario, actualizarUsuario } from './usuarios.js';
+import { crearLimitador } from './auth.js';
+import { normalizarUsuario } from './validar.js';
 
-// Compara en tiempo constante; los hashes igualan el largo para timingSafeEqual.
-function claveCorrecta(dada, esperada) {
-  if (!esperada) return false;
-  const a = crypto.createHash('sha256').update(String(dada)).digest();
-  const b = crypto.createHash('sha256').update(esperada).digest();
-  return crypto.timingSafeEqual(a, b);
+function tokenDe(req) {
+  const m = /^Bearer\s+(\S+)$/i.exec(req.get('Authorization') || '');
+  return m ? m[1] : '';
 }
 
-export function crearApp({ pool, claveEquipo, dirWeb }) {
+// Errores en rutas async de Express 5 llegan solos al manejador de errores.
+export function crearApp({ pool, dirWeb, limitador = crearLimitador() }) {
   const app = express();
   app.disable('x-powered-by');
+  // Detrás de Caddy (o del túnel): la IP real del celular viene en X-Forwarded-For.
+  app.set('trust proxy', 1);
 
   app.use((req, res, next) => {
     res.set({
@@ -38,16 +43,75 @@ export function crearApp({ pool, claveEquipo, dirWeb }) {
     }
   });
 
-  // La clave se revisa antes de leer el cuerpo: una petición sin clave no consume memoria.
-  function autorizar(req, res, next) {
-    if (!claveCorrecta(req.get('X-Clave-Equipo') || '', claveEquipo)) {
-      return res.status(401).json({ error: 'Clave del equipo incorrecta' });
+  // Ingreso: límite de intentos fallidos por usuario y por IP.
+  app.post('/api/ingresar', express.json({ limit: '10kb' }), async (req, res) => {
+    const usuario = normalizarUsuario(req.body && req.body.usuario);
+    const claves = ['u:' + usuario, 'ip:' + req.ip];
+    if (limitador.bloqueado(...claves)) {
+      return res.status(429).json({ error: 'Demasiados intentos. Espera unos minutos e intenta de nuevo.' });
+    }
+    const r = await ingresar(pool, usuario, req.body && req.body.clave);
+    if (!r) {
+      limitador.fallo(...claves);
+      return res.status(401).json({ error: 'Usuario o contraseña incorrectos' });
+    }
+    limitador.exito('u:' + usuario);
+    res.json(r);
+  });
+
+  // La sesión se revisa antes de leer el cuerpo: una petición sin sesión no consume memoria.
+  async function autenticar(req, res, next) {
+    const usuario = await sesionDe(pool, tokenDe(req));
+    if (!usuario) return res.status(401).json({ error: 'Sesión vencida o no válida. Vuelve a entrar.' });
+    req.usuario = usuario;
+    next();
+  }
+  // Con contraseña temporal solo se puede cambiar la contraseña, consultar quién es o salir.
+  function claveAlDia(req, res, next) {
+    if (req.usuario.debeCambiarClave) {
+      return res.status(403).json({ error: 'Debes cambiar tu contraseña antes de seguir', debeCambiarClave: true });
     }
     next();
   }
+  function soloAdmin(req, res, next) {
+    if (req.usuario.rol !== 'admin') return res.status(403).json({ error: 'Solo un administrador puede hacer esto' });
+    next();
+  }
 
-  app.post('/api/sync', autorizar, express.json({ limit: '5mb' }), async (req, res) => {
-    res.json(await sincronizar(pool, req.body));
+  app.get('/api/yo', autenticar, (req, res) => res.json({ usuario: req.usuario }));
+
+  app.post('/api/salir', autenticar, async (req, res) => {
+    await cerrarSesion(pool, tokenDe(req));
+    res.json({ ok: true });
+  });
+
+  app.post('/api/clave', autenticar, express.json({ limit: '10kb' }), async (req, res) => {
+    const claves = ['cambio:' + req.usuario.id];
+    if (limitador.bloqueado(...claves)) {
+      return res.status(429).json({ error: 'Demasiados intentos. Espera unos minutos e intenta de nuevo.' });
+    }
+    try {
+      await cambiarClave(pool, req.usuario, req.body && req.body.actual, req.body && req.body.nueva, tokenDe(req));
+    } catch (e) {
+      if (e instanceof ErrorCliente && /actual/.test(e.message)) limitador.fallo(...claves);
+      throw e;
+    }
+    res.json({ usuario: Object.assign({}, req.usuario, { debeCambiarClave: false }) });
+  });
+
+  app.post('/api/sync', autenticar, claveAlDia, express.json({ limit: '5mb' }), async (req, res) => {
+    res.json(await sincronizar(pool, req.body, req.usuario));
+  });
+
+  // ---------- administración de usuarios ----------
+  app.get('/api/usuarios', autenticar, claveAlDia, soloAdmin, async (req, res) => {
+    res.json({ usuarios: await listarUsuarios(pool) });
+  });
+  app.post('/api/usuarios', autenticar, claveAlDia, soloAdmin, express.json({ limit: '10kb' }), async (req, res) => {
+    res.status(201).json({ usuario: await crearUsuario(pool, req.body || {}) });
+  });
+  app.patch('/api/usuarios/:id', autenticar, claveAlDia, soloAdmin, express.json({ limit: '10kb' }), async (req, res) => {
+    res.json({ usuario: await actualizarUsuario(pool, req.params.id, req.body || {}, req.usuario) });
   });
 
   app.use('/api', (req, res) => res.status(404).json({ error: 'No existe' }));

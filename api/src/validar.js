@@ -149,3 +149,36 @@ export function validarVisita(v) {
   valor.creada = new Date(Number.isNaN(creada) ? Date.now() : creada).toISOString();
   return { valor };
 }
+
+// ---------- usuarios (migración 005) ----------
+// Mismos límites de la tabla usuarios y de app/src/nucleo/reglas.js (LIMITES_USUARIO).
+export const ROLES = ['admin', 'vendedor'];
+export const LIMITES_USUARIO = { usuario: 40, nombre: 60, claveMin: 8, claveTemporalMin: 4, claveMax: 128 };
+
+export function normalizarUsuario(u) {
+  return texto(u).toLowerCase();
+}
+
+// temporal: la pone un administrador y el usuario debe cambiarla al entrar (puede ser corta).
+export function validarClave(clave, temporal) {
+  const c = typeof clave === 'string' ? clave : '';
+  const min = temporal ? LIMITES_USUARIO.claveTemporalMin : LIMITES_USUARIO.claveMin;
+  if (c.length < min) return { error: 'La contraseña debe tener al menos ' + min + ' caracteres' };
+  if (c.length > LIMITES_USUARIO.claveMax) return { error: 'La contraseña es demasiado larga' };
+  return { valor: c };
+}
+
+export function validarUsuarioNuevo(u) {
+  if (!u || typeof u !== 'object') return { error: 'Registro vacío' };
+  const usuario = normalizarUsuario(u.usuario);
+  if (!/^[a-z0-9._-]{3,40}$/.test(usuario)) {
+    return { error: 'El usuario debe tener de 3 a 40 letras sin tildes, números, punto, guion o guion bajo' };
+  }
+  const nombre = texto(u.nombre);
+  if (!nombre) return { error: 'Falta el nombre' };
+  if (nombre.length > LIMITES_USUARIO.nombre) return { error: 'El nombre supera ' + LIMITES_USUARIO.nombre + ' caracteres' };
+  if (!ROLES.includes(u.rol)) return { error: 'Rol no válido' };
+  const c = validarClave(u.clave, true);
+  if (c.error) return c;
+  return { valor: { usuario, nombre, rol: u.rol, clave: c.valor } };
+}

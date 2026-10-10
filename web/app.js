@@ -232,10 +232,7 @@
 
     let html = '<section class="cabecera"><h2>Hoy</h2><p>' + esc(fecha) + '</p></section>';
     const sync = DB.estadoSync();
-    if (sync.modo === 'servidor' && !sync.tieneClave) {
-      html += '<div class="aviso-linea">Falta la clave del equipo <button class="enlace" data-ir="datos">Escribirla</button></div>';
-    }
-    if (!DB.obtenerVendedor()) {
+    if (sync.modo !== 'servidor' && !DB.obtenerVendedor()) {
       html += '<div class="aviso-linea">Falta tu nombre de vendedor <button class="enlace" data-ir="datos">Escribirlo</button></div>';
     }
 
@@ -433,10 +430,14 @@
         '<p class="ayuda">Modo local: esta copia de la app no está conectada a un servidor, así que los datos ' +
         'solo viven en este celular. Descarga respaldos con frecuencia.</p></div>';
     }
-    return '<div class="bloque"><h3>Sincronización</h3>' +
-      '<label class="campo">Clave del equipo' +
-        '<input id="clave-equipo" type="password" autocomplete="off" placeholder="' +
-          (s.tieneClave ? 'Guardada. Escribe otra para cambiarla' : 'La entrega el administrador') + '"></label>' +
+    const sesion = DB.sesion();
+    return '<div class="bloque"><h3>Tu cuenta</h3>' +
+        '<p><strong>' + esc(sesion.usuario.nombre) + '</strong></p>' +
+        '<p class="ayuda">' + esc(sesion.usuario.usuario) + ' · ' + (sesion.usuario.rol === 'admin' ? 'Administrador' : 'Vendedor') +
+          '. Tus visitas quedan registradas a tu nombre.</p>' +
+        '<button class="btn btn-sec btn-ancho" data-ir="clave">Cambiar contraseña</button>' +
+        '<button class="btn btn-sec btn-ancho" data-accion="salir">Cerrar sesión</button></div>' +
+      '<div class="bloque"><h3>Sincronización</h3>' +
       '<p class="ayuda">' + esc(estadoActual().texto) + '</p>' +
       '<button class="btn btn-pri btn-ancho" data-accion="sync">Sincronizar ahora</button></div>';
   }
@@ -444,11 +445,13 @@
   function vistaDatos() {
     return '<section class="cabecera"><h2>Datos</h2><p>' + DB.censo().length + ' ferreterías en este celular</p></section>' +
       bloqueSync() +
-      '<div class="bloque">' +
-        '<label class="campo">Tu nombre (vendedor)' +
-          '<input id="vendedor" value="' + esc(DB.obtenerVendedor()) + '" placeholder="Nombre y apellido" maxlength="60"></label>' +
-        '<p class="ayuda">Se guarda en este celular y aparece en cada visita que registres.</p>' +
-      '</div>' +
+      (DB.estadoSync().modo !== 'servidor'
+        ? '<div class="bloque">' +
+          '<label class="campo">Tu nombre (vendedor)' +
+            '<input id="vendedor" value="' + esc(DB.obtenerVendedor()) + '" placeholder="Nombre y apellido" maxlength="60"></label>' +
+          '<p class="ayuda">Se guarda en este celular y aparece en cada visita que registres.</p>' +
+        '</div>'
+        : '') +
       '<div class="bloque"><h3>Importar censo (CSV)</h3>' +
         '<p class="ayuda">Columnas: nombre, direccion, barrio, municipio, telefono, zona. Opcional: id. ' +
         'Separador ; o ,. Si el id, o la combinación nombre + dirección + municipio, ya existe, se actualiza.</p>' +
@@ -464,9 +467,36 @@
   }
 
   // ---------- render ----------
+  function vistaIngreso() {
+    return '<section class="cabecera"><h2>Entrar</h2><p>Con el usuario y la contraseña que te dio el administrador.</p></section>' +
+      '<form id="form-ingreso" class="bloque">' +
+        '<label class="campo">Usuario<input name="usuario" autocomplete="username" autocapitalize="none" required></label>' +
+        '<label class="campo">Contraseña<input name="clave" type="password" autocomplete="current-password" required></label>' +
+        '<button class="btn btn-pri btn-ancho">Entrar</button></form>';
+  }
+  function vistaClave() {
+    const s = DB.sesion();
+    const obligatorio = !!(s && s.usuario.debeCambiarClave);
+    return '<section class="cabecera"><h2>' + (obligatorio ? 'Hola, ' + esc(s.usuario.nombre) : 'Cambiar contraseña') + '</h2>' +
+      (obligatorio ? '<p>Entraste con una contraseña temporal. Escoge una propia para seguir.</p>' : '') + '</section>' +
+      '<form id="form-clave" class="bloque">' +
+        '<label class="campo">' + (obligatorio ? 'Contraseña temporal' : 'Contraseña actual') +
+          '<input name="actual" type="password" autocomplete="current-password" required></label>' +
+        '<label class="campo">Contraseña nueva (mínimo 8 caracteres)<input name="nueva" type="password" autocomplete="new-password" minlength="8" required></label>' +
+        '<label class="campo">Repite la contraseña nueva<input name="repetir" type="password" autocomplete="new-password" minlength="8" required></label>' +
+        '<button class="btn btn-pri btn-ancho">Guardar contraseña</button></form>' +
+      (obligatorio ? '<button class="btn btn-sec btn-ancho" data-accion="salir">Salir</button>' : '');
+  }
+
   function render() {
     destruirMapa();
-    const vistas = { hoy: vistaHoy, censo: vistaCenso, ficha: vistaFicha, resumen: vistaResumen, datos: vistaDatos };
+    const vistas = { hoy: vistaHoy, censo: vistaCenso, ficha: vistaFicha, resumen: vistaResumen, datos: vistaDatos, clave: vistaClave };
+    const sesion = DB.sesion();
+    if (DB.estadoSync().modo === 'servidor' && (!sesion || sesion.usuario.debeCambiarClave)) {
+      main.innerHTML = sesion ? vistaClave() : vistaIngreso();
+      pintarEstado();
+      return;
+    }
     main.innerHTML = (vistas[ui.vista] || vistaHoy)();
     document.querySelectorAll('[data-nav]').forEach(b => b.classList.toggle('activo', b.dataset.ir === ui.vista));
     if (ui.vista === 'censo') pintarLista();
@@ -534,8 +564,8 @@
   // ---------- sincronización ----------
   const MENSAJES_SYNC = {
     ok: 'Sincronizado',
-    'sin-clave': 'Escribe la clave del equipo',
-    'clave-incorrecta': 'Clave del equipo incorrecta',
+    'sin-sesion': 'Tu sesión venció: vuelve a entrar',
+    'cambiar-clave': 'Cambia tu contraseña para seguir',
     'sin-conexion': 'Sin conexión: los cambios quedan guardados en el celular',
     error: 'El servidor tuvo un problema; se reintenta después'
   };
@@ -551,10 +581,10 @@
     const s = DB.estadoSync();
     if (s.modo !== 'servidor') return { texto: 'Modo local', clase: 'neutro' };
     if (sincronizandoAhora) return { texto: 'Sincronizando…', clase: 'neutro' };
-    if (!s.tieneClave) return { texto: 'Falta la clave del equipo', clase: 'alerta' };
+    if (!s.conSesion) return { texto: 'Sin sesión', clase: 'alerta' };
     const r = ultimoSync && ultimoSync.estado;
     const pend = s.pendientes ? ' · ' + s.pendientes + ' sin enviar' : '';
-    if (r === 'clave-incorrecta') return { texto: 'Clave del equipo incorrecta' + pend, clase: 'alerta' };
+    if (r === 'cambiar-clave') return { texto: 'Cambia tu contraseña' + pend, clase: 'alerta' };
     if (r === 'sin-conexion') return { texto: 'Sin conexión' + pend, clase: 'alerta' };
     if (r === 'error') return { texto: 'Error del servidor' + pend, clase: 'alerta' };
     if (s.pendientes) return { texto: s.pendientes + ' cambio(s) sin enviar', clase: 'alerta' };
@@ -651,6 +681,11 @@
   // ---------- acciones ----------
   function accion(nombre, boton) {
     if (nombre === 'sync') return sincronizarAhora(true);
+    if (nombre === 'salir') {
+      const p = DB.estadoSync().pendientes;
+      if (p && !confirm('Hay ' + p + ' cambio(s) sin enviar. Se quedan en este celular y se envían cuando vuelvas a entrar. ¿Cerrar sesión?')) return;
+      return DB.salir().then(() => { ui.vista = 'hoy'; render(); });
+    }
     if (nombre === 'cerca') return ubicarme();
     if (nombre === 'ubicar') return guardarUbicacionAqui(boton.dataset.id);
     if (nombre === 'descartar' || nombre === 'reactivar') {
@@ -730,14 +765,6 @@
         toast('Nombre guardado');
         return render();
       }
-      if (t.id === 'clave-equipo') {
-        if (!t.value.trim()) return;
-        DB.fijarClaveEquipo(t.value);
-        t.value = '';
-        t.blur();
-        toast('Clave guardada');
-        return sincronizarAhora(true);
-      }
       if (t.id === 'archivo-csv' && t.files[0]) {
         const r = DB.importarCSV(await t.files[0].text());
         t.value = '';
@@ -759,9 +786,31 @@
     }
   });
 
-  document.addEventListener('submit', e => {
+  document.addEventListener('submit', async e => {
     e.preventDefault();
     const form = e.target;
+    if (form.id === 'form-ingreso' || form.id === 'form-clave') {
+      const boton = form.querySelector('button');
+      boton.disabled = true;
+      try {
+        const fd = new FormData(form);
+        if (form.id === 'form-ingreso') {
+          const u = await DB.ingresar(String(fd.get('usuario')).trim(), fd.get('clave'));
+          toast('Hola, ' + u.nombre);
+        } else {
+          if (fd.get('nueva') !== fd.get('repetir')) throw new Error('Las dos contraseñas nuevas no coinciden');
+          await DB.cambiarClave(fd.get('actual'), fd.get('nueva'));
+          toast('Contraseña cambiada');
+        }
+        ui.vista = 'hoy';
+        render();
+        sincronizarAhora(false);
+      } catch (err) {
+        boton.disabled = false;
+        toast(err.message);
+      }
+      return;
+    }
     try {
       const fd = new FormData(form);
       if (form.id === 'form-visita') {
