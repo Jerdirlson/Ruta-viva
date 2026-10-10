@@ -40,7 +40,9 @@ const { token, usuario: yo } = await api('/api/ingresar', { usuario: usuario.tri
 try {
   if (yo.debeCambiarClave) throw new Error('Tienes contraseña temporal: entra primero a la app y cámbiala.');
   const actuales = new Map((await api('/api/sync', {}, token)).ferreterias.map(f => [f.id, f]));
-  const lote = correcciones.map(c => Object.assign({}, actuales.get(c.id) || {}, c));
+  const faltan = correcciones.filter(c => !actuales.has(c.id) && !c.nombre);
+  faltan.forEach(c => console.log('se salta ' + c.id + ': no existe en el servidor (carga primero el censo)'));
+  const lote = correcciones.filter(c => !faltan.includes(c)).map(c => Object.assign({}, actuales.get(c.id) || {}, c));
   lote.forEach(f => console.log((actuales.has(f.id) ? 'corrige ' : 'crea    ') + f.id + ' · ' + f.nombre + ' · ' + f.municipio));
   const r = await api('/api/sync', { ferreterias: lote }, token);
   console.log('Listo. Rechazadas: ' + r.rechazadas.length);
