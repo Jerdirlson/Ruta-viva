@@ -10,7 +10,7 @@
 // dibujados como imagen (tracksViewChanges apagado, necesario con cientos de ellos) no
 // reciben el toque y llega al mapa. Por eso cada toque del mapa se resuelve con la misma
 // geometría con que se dibujan los marcadores (marcadorEn en nucleo/geo).
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import React, { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 import MapView, { Marker } from 'react-native-maps';
 import { color } from '../tema';
@@ -34,17 +34,43 @@ function Punto({ g, elegida }) {
   // El punto se ve pequeño, pero el área que se toca es más grande.
   if (n === 1) {
     return (
-      <View style={[s.toque, { width: lado, height: lado }]}>
+      <View collapsable={false} style={[s.toque, { width: lado, height: lado }]}>
         <View style={[s.punto, { backgroundColor: fondo }, elegida && s.puntoElegido]} />
       </View>
     );
   }
   return (
-    <View style={[s.grupo, { backgroundColor: fondo, width: lado, height: lado, borderRadius: lado / 2 }, elegida && s.grupoElegido]}>
+    <View collapsable={false} style={[s.grupo, { backgroundColor: fondo, width: lado, height: lado, borderRadius: lado / 2 }, elegida && s.grupoElegido]}>
       <Text style={[s.numero, g.color === 'amarillo' && { color: color.texto }]}>{n}</Text>
     </View>
   );
 }
+
+// Cada marcador decide cuándo redibujarse: al aparecer y cuando cambia su color, su número
+// o si está elegido. Antes se redibujaban todos cada vez que cambiaba uno, y en Android
+// cada marcador es una imagen nativa: el mapa se trababa al moverlo.
+const Marcador = memo(function Marcador({ g, elegida, onTocar }) {
+  const [rastrear, setRastrear] = useState(true);
+  const n = g.ferreterias.length;
+  useEffect(() => {
+    setRastrear(true);
+    const t = setTimeout(() => setRastrear(false), 500);
+    return () => clearTimeout(t);
+  }, [g.color, n, elegida]);
+  return (
+    <Marker
+      coordinate={{ latitude: g.lat, longitude: g.lng }}
+      anchor={{ x: 0.5, y: 0.5 }}
+      centerOffset={{ x: 0, y: 0 }}
+      zIndex={elegida ? 1000 : n}
+      tracksViewChanges={rastrear}
+      onPress={ev => onTocar(g, ev)}
+    >
+      <Punto g={g} elegida={elegida} />
+    </Marker>
+  );
+}, (a, b) => a.elegida === b.elegida && a.onTocar === b.onTocar && a.g.clave === b.g.clave &&
+  a.g.color === b.g.color && a.g.ferreterias.length === b.g.ferreterias.length && a.g.lat === b.g.lat && a.g.lng === b.g.lng);
 
 export default function MapaHoy({ lista, posicion, elegidaId, onSeleccionar, onElegirVarias }) {
   const mapa = useRef(null);
@@ -53,16 +79,6 @@ export default function MapaHoy({ lista, posicion, elegidaId, onSeleccionar, onE
   const ubicadas = useMemo(() => lista.filter(f => f.lat != null), [lista]);
   // Solo lo que está en la vista: de cerca serían cientos de marcadores fuera de pantalla.
   const grupos = useMemo(() => agrupar(enVista(ubicadas, region), region, tamano, colorPin), [ubicadas, region, tamano]);
-
-  // Los marcadores con vista propia se dibujan y se congelan (tracksViewChanges): si no,
-  // cientos de ellos traban el mapa. Se descongelan un momento cada vez que cambian.
-  const [dibujando, setDibujando] = useState(true);
-  const firma = grupos.map(g => g.clave + g.color + g.ferreterias.length).join('|') + '#' + (elegidaId || '');
-  useEffect(() => {
-    setDibujando(true);
-    const t = setTimeout(() => setDibujando(false), 700);
-    return () => clearTimeout(t);
-  }, [firma]);
 
   const encuadrar = useCallback(puntos => {
     if (puntos.length && mapa.current) mapa.current.fitToCoordinates(puntos, { edgePadding: MARGEN, animated: true });
@@ -89,11 +105,13 @@ export default function MapaHoy({ lista, posicion, elegidaId, onSeleccionar, onE
   // Si el mapa nativo sí entrega el toque al marcador, el toque del mapa que llega
   // detrás (en iPhone llegan los dos) se ignora para no resolverlo dos veces.
   const ultimoToqueMarcador = useRef(0);
-  const tocarMarcador = (g, ev) => {
+  const elegirRef = useRef(elegirGrupo);
+  elegirRef.current = elegirGrupo;
+  const tocarMarcador = useCallback((g, ev) => {
     ultimoToqueMarcador.current = Date.now();
     if (ev && ev.stopPropagation) ev.stopPropagation();
-    elegirGrupo(g);
-  };
+    elegirRef.current(g);
+  }, []);
 
   const tocarMapa = ev => {
     const e = (ev && ev.nativeEvent) || {};
@@ -114,25 +132,13 @@ export default function MapaHoy({ lista, posicion, elegidaId, onSeleccionar, onE
         onRegionChangeComplete={setRegion}
         showsUserLocation={!!posicion}
         showsMyLocationButton={false}
+        moveOnMarkerPress={false}
         toolbarEnabled={false}
         onPress={tocarMapa}
       >
-        {grupos.map(g => {
-          const elegida = !!elegidaId && g.ferreterias.some(f => f.id === elegidaId);
-          return (
-            <Marker
-              key={g.clave}
-              coordinate={{ latitude: g.lat, longitude: g.lng }}
-              anchor={{ x: 0.5, y: 0.5 }}
-              centerOffset={{ x: 0, y: 0 }}
-              zIndex={elegida ? 1000 : g.ferreterias.length}
-              tracksViewChanges={dibujando}
-              onPress={ev => tocarMarcador(g, ev)}
-            >
-              <Punto g={g} elegida={elegida} />
-            </Marker>
-          );
-        })}
+        {grupos.map(g => (
+          <Marcador key={g.clave} g={g} elegida={!!elegidaId && g.ferreterias.some(f => f.id === elegidaId)} onTocar={tocarMarcador} />
+        ))}
       </MapView>
     </View>
   );

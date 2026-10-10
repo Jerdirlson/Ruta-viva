@@ -232,7 +232,7 @@ export function registrarVisita(datos, v, conServidor, ahora = new Date()) {
 }
 
 function ordenVisitas(a, b) {
-  return b.fecha.localeCompare(a.fecha) || (b.creada || '').localeCompare(a.creada || '');
+  return compararTexto(b.fecha, a.fecha) || compararTexto(b.creada || '', a.creada || '');
 }
 // Descartada manda. Ya cliente de SOCODA antes de la app = cliente, salvo que haya pedido visita.
 function estadoDe(ultima, f) {
@@ -277,7 +277,29 @@ export function colorPin(f) {
   return 'gris';
 }
 
-const ORDEN = (a, b) => String(a).localeCompare(b, 'es');
+// Orden alfabético en español SIN localeCompare: en Android, Hermes resuelve cada
+// localeCompare llamando al sistema (ICU), y ordenar el censo hacía decenas de miles de
+// esas llamadas: congelaba la app al sincronizar. La clave (minúsculas, sin tildes) se
+// calcula una vez por texto y se compara directo. Ñ cuenta como N.
+const CLAVES = new Map();
+export function claveOrden(s) {
+  const t = String(s == null ? '' : s);
+  let k = CLAVES.get(t);
+  if (k === undefined) {
+    k = normaliza(t);
+    if (CLAVES.size > 20000) CLAVES.clear();
+    CLAVES.set(t, k);
+  }
+  return k;
+}
+export function comparar(a, b) {
+  const x = claveOrden(a);
+  const y = claveOrden(b);
+  return x < y ? -1 : x > y ? 1 : 0;
+}
+// Fechas ISO (AAAA-MM-DD) y horas ISO ya se ordenan como texto.
+export const compararTexto = (a, b) => (a < b ? -1 : a > b ? 1 : 0);
+const ORDEN = comparar;
 
 // Grupo para filtrar y separar la lista: la zona, o el municipio si aún no tiene zona.
 export function grupoDe(f) {
@@ -300,7 +322,7 @@ function resumenPor(visitas, claveDe) {
     fila.visitas++;
     if (v.resultado === 'compro') fila.compras++;
   });
-  return [...mapa.values()].sort((a, b) => b.visitas - a.visitas || a.clave.localeCompare(b.clave, 'es'));
+  return [...mapa.values()].sort((a, b) => b.visitas - a.visitas || comparar(a.clave, b.clave));
 }
 
 // dias: 30 para últimos 30 días, 0 para todo el histórico.
@@ -314,12 +336,12 @@ export function resumen(datos, dias, ahora = new Date()) {
   datos.ferreterias.forEach(f => {
     const compras = datos.visitas
       .filter(v => v.ferreteriaId === f.id && v.resultado === 'compro')
-      .sort((a, b) => a.fecha.localeCompare(b.fecha));
+      .sort((a, b) => compararTexto(a.fecha, b.fecha));
     if (compras.length && compras[0].fecha >= desde) {
       clientesNuevos.push({ id: f.id, nombre: f.nombre, municipio: f.municipio, zona: f.zona, fecha: compras[0].fecha });
     }
   });
-  clientesNuevos.sort((a, b) => b.fecha.localeCompare(a.fecha));
+  clientesNuevos.sort((a, b) => compararTexto(b.fecha, a.fecha));
 
   return {
     visitas: visitas.length,

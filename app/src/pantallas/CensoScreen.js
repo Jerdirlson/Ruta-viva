@@ -48,12 +48,13 @@ export default function CensoScreen({ navigation }) {
   const estados = Object.keys(ESTADOS).map(k => [k, ESTADOS[k]]);
 
   const busqueda = normaliza(q);
-  const filtradas = censo.filter(f =>
+  // Solo se recalcula si cambian los datos o los filtros (no en cada redibujo).
+  const filtradas = useMemo(() => censo.filter(f =>
     (!zona || f.zona === zona) &&
     (!municipio || f.municipio === municipio) &&
     (estado ? f.estado === estado : f.estado !== 'descartada') &&
     (!busqueda || normaliza(f.nombre + ' ' + f.barrio).includes(busqueda))
-  ).sort(ordenZona);
+  ).sort(ordenZona), [censo, zona, municipio, estado, busqueda]);
 
   return (
     <FlatList

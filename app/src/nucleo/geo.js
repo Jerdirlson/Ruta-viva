@@ -89,7 +89,7 @@ const urgencia = c => { const i = URGENCIA.indexOf(c); return i < 0 ? URGENCIA.l
 export function agrupar(lista, region, tamano, colorDe, radioPx = RADIO_PX) {
   const ubicadas = lista.filter(f => f.lat != null)
     .map(f => ({ f, color: colorDe(f) }))
-    .sort((a, b) => urgencia(a.color) - urgencia(b.color) || String(a.f.id).localeCompare(String(b.f.id)));
+    .sort((a, b) => urgencia(a.color) - urgencia(b.color) || (String(a.f.id) < String(b.f.id) ? -1 : String(a.f.id) > String(b.f.id) ? 1 : 0));
   if (!region || !tamano || !tamano.ancho || !tamano.alto) {
     return ubicadas.map(({ f, color }) => ({ clave: f.id, lat: f.lat, lng: f.lng, ferreterias: [f], color }));
   }

@@ -375,3 +375,41 @@ test('sync por cambios: pide solo lo nuevo, mezcla sin perder lo que ya tenía y
   // Al día siguiente vuelve a pedir todo.
   assert.equal(armarLote(d, new Date(2026, 9, 11, 13, 0, 0)).desde, undefined);
 });
+
+// En Android (Hermes) cada localeCompare llama al sistema y ordenar el censo con él
+// congelaba la app. El núcleo no debe usarlo; el orden en español se mantiene.
+test('orden: sin localeCompare, alfabético en español (tildes y ñ)', () => {
+  const orig = String.prototype.localeCompare;
+  let llamadas = 0;
+  String.prototype.localeCompare = function (...a) { llamadas++; return orig.apply(this, a); };
+  try {
+    const d = base();
+    ['Ñapa', 'Árbol', 'zeta', 'Ébano', 'nube'].forEach((n, i) => R.guardarFerreteria(d, { id: 'o' + i, nombre: n, municipio: 'Girón', zona: 'Z9' }, false));
+    const c = R.censoDe(d, HOY);
+    const orden = R.pendientesDe(c).sort(R.ordenZona).filter(f => f.zona === 'Z9').map(f => f.nombre);
+    assert.deepEqual(orden, ['Árbol', 'Ébano', 'Ñapa', 'nube', 'zeta']);
+    R.unicos(c.map(f => f.municipio));
+    E_estadisticas(d);
+    assert.equal(llamadas, 0);
+  } finally {
+    String.prototype.localeCompare = orig;
+  }
+});
+async function cargarE() { return import('../src/nucleo/estadisticas.js'); }
+let E_mod = null;
+function E_estadisticas(d) { if (E_mod) E_mod.estadisticas(d, { dias: 30 }, HOY); }
+test('orden: estadísticas tampoco usan localeCompare', async () => {
+  E_mod = await cargarE();
+  const orig = String.prototype.localeCompare;
+  let llamadas = 0;
+  String.prototype.localeCompare = function (...a) { llamadas++; return orig.apply(this, a); };
+  try {
+    const d = base();
+    d.visitas.push({ id: 'v', ferreteriaId: 'f1', fecha: '2026-10-09', resultado: 'compro', vendedor: 'Ana', lineas: [], competencia: 'Haceb', notas: '', creada: '' });
+    E_mod.estadisticas(d, { dias: 30 }, HOY);
+    E_mod.vendedoresDe(d);
+    assert.equal(llamadas, 0);
+  } finally {
+    String.prototype.localeCompare = orig;
+  }
+});

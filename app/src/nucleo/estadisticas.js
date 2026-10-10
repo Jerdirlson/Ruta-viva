@@ -1,13 +1,13 @@
 // Estadísticas del equipo para la pantalla Resumen. Lógica pura (se prueba en Node).
 // La misma cuenta vive en web/db.js (estadisticas): si se cambia una, se cambia la otra.
-import { LINEAS, RESULTADOS, censoDe, pendientesDe, fechaHaceDias, grupoDe, hoyISO, normaliza, limpiar } from './reglas.js';
+import { LINEAS, RESULTADOS, censoDe, pendientesDe, comparar, compararTexto, fechaHaceDias, grupoDe, hoyISO, normaliza, limpiar } from './reglas.js';
 
 // dias: 1 = hoy, 7, 30, 0 = todo. vendedor: '' = todo el equipo.
 export const PERIODOS = [[1, 'Hoy'], [7, '7 días'], [30, '30 días'], [0, 'Todo']];
 const DIAS_GRAFICA = 30;   // con "Todo", la gráfica muestra los últimos 30 días
 
 const pct = (a, b) => (b ? Math.round(100 * a / b) : 0);
-const ORDEN = (a, b) => b.visitas - a.visitas || String(a.clave).localeCompare(String(b.clave), 'es');
+const ORDEN = (a, b) => b.visitas - a.visitas || comparar(a.clave, b.clave);
 
 export function estadisticas(datos, { dias = 30, vendedor = '' } = {}, ahora = new Date()) {
   const hoy = hoyISO(ahora);
@@ -64,7 +64,7 @@ export function estadisticas(datos, { dias = 30, vendedor = '' } = {}, ahora = n
   });
   const porGrupo = [...grupos.values()]
     .map(g => Object.assign(g, { cobertura: pct(g.visitadas, g.activas), efectividad: pct(g.compras, g.visitas) }))
-    .sort((a, b) => b.activas - a.activas || a.clave.localeCompare(b.clave, 'es'));
+    .sort((a, b) => b.activas - a.activas || comparar(a.clave, b.clave));
 
   // Líneas que manejan las ferreterías visitadas (lo que se marcó en cada visita).
   const lineas = Object.keys(LINEAS).map(k => ({
@@ -94,17 +94,17 @@ export function estadisticas(datos, { dias = 30, vendedor = '' } = {}, ahora = n
   // Clientes nuevos: su primera compra (de cualquier vendedor) cae en el periodo.
   const clientesNuevos = [];
   censo.forEach(f => {
-    const primera = f.visitas.filter(v => v.resultado === 'compro').sort((a, b) => a.fecha.localeCompare(b.fecha))[0];
+    const primera = f.visitas.filter(v => v.resultado === 'compro').sort((a, b) => compararTexto(a.fecha, b.fecha))[0];
     if (primera && primera.fecha >= desde && primera.fecha <= hoy && delVendedor(primera)) {
       clientesNuevos.push({ id: f.id, nombre: f.nombre, grupo: grupoDe(f), fecha: primera.fecha, vendedor: primera.vendedor });
     }
   });
-  clientesNuevos.sort((a, b) => b.fecha.localeCompare(a.fecha));
+  clientesNuevos.sort((a, b) => compararTexto(b.fecha, a.fecha));
 
   // Para hacer: las que pidieron visita (la más antigua primero).
   const seguimiento = activas.filter(f => f.estado === 'seguimiento')
     .map(f => ({ id: f.id, nombre: f.nombre, grupo: grupoDe(f), fecha: f.ultima.fecha, vendedor: f.ultima.vendedor }))
-    .sort((a, b) => a.fecha.localeCompare(b.fecha));
+    .sort((a, b) => compararTexto(a.fecha, b.fecha));
 
   // Cobertura: solo cuentan las activas (una descartada pudo visitarse antes de descartarla).
   const visitadasActivas = activas.filter(f => visitadas.has(f.id)).length;
@@ -141,5 +141,5 @@ export function vendedoresDe(datos) {
     const t = limpiar(v.vendedor);
     if (t && !nombres.has(normaliza(t))) nombres.set(normaliza(t), t);
   });
-  return [...nombres.values()].sort((a, b) => a.localeCompare(b, 'es'));
+  return [...nombres.values()].sort(comparar);
 }
