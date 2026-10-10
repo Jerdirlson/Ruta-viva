@@ -1,6 +1,6 @@
 // Indicador de sincronización en el encabezado ("Sincronizado 10:42", "2 sin enviar"…).
 import React from 'react';
-import { Pressable, StyleSheet, Text } from 'react-native';
+import { ActivityIndicator, Pressable, StyleSheet, Text } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import { color, letra, radio, TOQUE } from '../tema';
 import { useApp } from '../estado/AppContext';
@@ -35,12 +35,13 @@ export default function EstadoSync() {
   const tinta = { ok: color.okTexto, alerta: color.avisoTexto, neutro: color.texto }[t];
   return (
     <Pressable onPress={() => navegacion.navigate('Datos')} accessibilityRole="button" style={[s.chip, { backgroundColor: fondo }]} testID="estado-sync">
+      {sync.sincronizando ? <ActivityIndicator size="small" color={tinta} /> : null}
       <Text style={[s.texto, { color: tinta }]} numberOfLines={1}>{textoEstadoSync(sync, modo)}</Text>
     </Pressable>
   );
 }
 
 const s = StyleSheet.create({
-  chip: { minHeight: TOQUE - 8, maxWidth: 210, justifyContent: 'center', paddingHorizontal: 12, borderRadius: radio.pastilla, marginRight: 12 },
+  chip: { minHeight: TOQUE - 8, maxWidth: 210, flexDirection: 'row', alignItems: 'center', gap: 6, justifyContent: 'center', paddingHorizontal: 12, borderRadius: radio.pastilla, marginRight: 12 },
   texto: { fontSize: letra.mini, fontWeight: '700' }
 });

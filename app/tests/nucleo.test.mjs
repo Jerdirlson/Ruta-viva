@@ -345,3 +345,33 @@ test('ruta: lo visitado hoy no es pendiente, ni aunque haya pedido visita (vuelv
   const manana = new Date(2026, 9, 11, 9, 0, 0);
   assert.deepEqual(R.pendientesDe(R.censoDe(d, manana)).map(f => f.id).sort(), ['f1', 'f3']);
 });
+
+test('mapa: solo dibuja lo que está en la vista (más un margen)', () => {
+  const lista = [{ id: 'dentro', lat: 7.10, lng: -73.10 }, { id: 'margen', lat: 7.1060, lng: -73.10 }, { id: 'lejos', lat: 7.20, lng: -73.10 }, { id: 'sin', lat: null, lng: null }];
+  const region = { latitude: 7.10, longitude: -73.10, latitudeDelta: 0.01, longitudeDelta: 0.01 };
+  assert.deepEqual(G.enVista(lista, region).map(f => f.id), ['dentro', 'margen']);
+  assert.equal(G.enVista(lista, null).length, 4);
+});
+
+test('sync por cambios: pide solo lo nuevo, mezcla sin perder lo que ya tenía y una vez al día pide todo', () => {
+  const d = R.vacio();
+  // Primera vez: sin "desde", respuesta completa.
+  assert.equal(armarLote(d, HOY).desde, undefined);
+  aplicarRespuesta(d, armarLote(d, HOY), {
+    ferreterias: [{ id: 'a', nombre: 'A' }, { id: 'b', nombre: 'B' }], visitas: [], hasta: '2026-10-10T12:00:00.000Z', completo: true
+  }, HOY);
+  assert.equal(d.syncDesde, '2026-10-10T12:00:00.000Z');
+  // Después: manda "desde" y la respuesta parcial se mezcla.
+  const despues = new Date(2026, 9, 10, 13, 0, 0);
+  const lote = armarLote(d, despues);
+  assert.equal(lote.desde, '2026-10-10T12:00:00.000Z');
+  const r = aplicarRespuesta(d, lote, {
+    ferreterias: [{ id: 'b', nombre: 'B corregida' }, { id: 'c', nombre: 'C nueva' }], visitas: [{ id: 'v1', ferreteriaId: 'a', fecha: '2026-10-10' }],
+    hasta: '2026-10-10T13:00:00.000Z', completo: false
+  }, despues);
+  assert.equal(r.cambios, 3);
+  assert.deepEqual(d.ferreterias.map(f => [f.id, f.nombre]).sort(), [['a', 'A'], ['b', 'B corregida'], ['c', 'C nueva']]);
+  assert.equal(d.visitas.length, 1);
+  // Al día siguiente vuelve a pedir todo.
+  assert.equal(armarLote(d, new Date(2026, 9, 11, 13, 0, 0)).desde, undefined);
+});

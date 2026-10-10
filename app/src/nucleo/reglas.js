@@ -103,6 +103,8 @@ export function vacio() {
     semilla: false,
     claveEquipo: '',
     ultimaSync: '',
+    syncDesde: '',       // hora del servidor de la última sincronización (para pedir solo cambios)
+    ultimaCompleta: '',  // última vez que se bajó todo
     pendientes: { ferreterias: {}, visitas: {} }
   };
 }
@@ -345,6 +347,9 @@ export function restaurarRespaldo(actual, texto, conServidor) {
     semilla: true,
     claveEquipo: actual.claveEquipo,
     ultimaSync: actual.ultimaSync,
+    // Tras restaurar se pide todo al servidor.
+    syncDesde: '',
+    ultimaCompleta: '',
     pendientes: vacio().pendientes
   });
   // Con servidor, restaurar = volver a enviar todo (las visitas no se duplican).

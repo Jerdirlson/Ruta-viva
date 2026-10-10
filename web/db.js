@@ -109,6 +109,8 @@
       semilla: false,
       modo: '',            // 'servidor' una vez que el API respondió; nunca vuelve atrás
       ultimaSync: '',
+      syncDesde: '',
+      ultimaCompleta: '',
       pendientes: { ferreterias: {}, visitas: {} }
     };
   }
@@ -447,6 +449,8 @@
       semilla: true,
       modo: actual.modo,
       ultimaSync: actual.ultimaSync,
+      syncDesde: '',
+      ultimaCompleta: '',
       pendientes: vacio().pendientes
     });
     // En modo servidor, restaurar = volver a enviar todo (las visitas no se duplican).
@@ -562,6 +566,10 @@
       ferreterias: Object.values(datos.pendientes.ferreterias),
       visitas: Object.values(datos.pendientes.visitas)
     };
+    // Por cambios, como en app/src/nucleo/sync.js: con "desde" el servidor responde solo lo
+    // que cambió. Una vez al día se pide todo.
+    const reciente = datos.ultimaCompleta && Date.now() - new Date(datos.ultimaCompleta) < 24 * 60 * 60 * 1000;
+    if (datos.syncDesde && reciente && datos.ferreterias.length) lote.desde = datos.syncDesde;
     let res;
     try {
       res = await fetch('api/sync', {
@@ -588,9 +596,14 @@
         if (enviados.get(id) === JSON.stringify(actual.pendientes[tipo][id])) delete actual.pendientes[tipo][id];
       });
     });
-    actual.ferreterias = superponer(resp.ferreterias || [], actual.pendientes.ferreterias);
-    actual.visitas = superponer(resp.visitas || [], actual.pendientes.visitas);
+    // Parcial: se mezcla con lo que ya había (nada se borra en el servidor). Completa: reemplaza.
+    const parcial = resp.completo === false;
+    const base = (tipo, lista) => (parcial ? superponer(actual[tipo], Object.fromEntries((lista || []).map(x => [x.id, x]))) : (lista || []));
+    actual.ferreterias = superponer(base('ferreterias', resp.ferreterias), actual.pendientes.ferreterias);
+    actual.visitas = superponer(base('visitas', resp.visitas), actual.pendientes.visitas);
     actual.ultimaSync = new Date().toISOString();
+    actual.syncDesde = resp.hasta || '';
+    if (!parcial) actual.ultimaCompleta = actual.ultimaSync;
     guardar(actual);
     return { estado: 'ok', rechazadas: resp.rechazadas || [] };
   }

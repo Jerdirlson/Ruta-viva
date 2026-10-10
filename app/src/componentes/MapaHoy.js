@@ -15,7 +15,7 @@ import { StyleSheet, Text, View } from 'react-native';
 import MapView, { Marker } from 'react-native-maps';
 import { color } from '../tema';
 import { colorPin } from '../nucleo/reglas';
-import { agrupar, extensionM, marcadorEn, ordenarPorCercania, MISMO_SITIO_M, TOQUE_PUNTO_PX, GRUPO_MAX_PX } from '../nucleo/geo';
+import { agrupar, enVista, extensionM, marcadorEn, ordenarPorCercania, MISMO_SITIO_M, TOQUE_PUNTO_PX, GRUPO_MAX_PX } from '../nucleo/geo';
 
 const CENTRO_AMB = { latitude: 7.1, longitude: -73.12, latitudeDelta: 0.18, longitudeDelta: 0.18 }; // área metropolitana de Bucaramanga
 const MARGEN = { top: 60, right: 60, bottom: 60, left: 60 };
@@ -51,7 +51,8 @@ export default function MapaHoy({ lista, posicion, elegidaId, onSeleccionar, onE
   const [region, setRegion] = useState(CENTRO_AMB);
   const [tamano, setTamano] = useState(null);
   const ubicadas = useMemo(() => lista.filter(f => f.lat != null), [lista]);
-  const grupos = useMemo(() => agrupar(ubicadas, region, tamano, colorPin), [ubicadas, region, tamano]);
+  // Solo lo que está en la vista: de cerca serían cientos de marcadores fuera de pantalla.
+  const grupos = useMemo(() => agrupar(enVista(ubicadas, region), region, tamano, colorPin), [ubicadas, region, tamano]);
 
   // Los marcadores con vista propia se dibujan y se congelan (tracksViewChanges): si no,
   // cientos de ellos traban el mapa. Se descongelan un momento cada vez que cambian.

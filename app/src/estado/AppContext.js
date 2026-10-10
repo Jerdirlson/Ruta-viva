@@ -52,15 +52,37 @@ export function AppProvider({ children }) {
   const avisar = useCallback(texto => setAviso({ texto, id: Date.now() }), []);
 
   // Cambia los datos con una función del núcleo y los guarda en el celular.
+  // El guardado en el celular se agrupa: varios cambios seguidos se escriben una sola vez
+  // (con el censo completo son cientos de KB y escribirlos en cada toque traba la app).
+  const temporizadorGuardar = useRef(null);
+  const guardarPronto = useCallback(() => {
+    clearTimeout(temporizadorGuardar.current);
+    temporizadorGuardar.current = setTimeout(() => {
+      AsyncStorage.setItem(CLAVE_ALMACEN, JSON.stringify(datosRef.current))
+        .catch(() => avisar('No se pudo guardar en el celular: revisa el espacio libre.'));
+    }, 500);
+  }, [avisar]);
+
+  // Si la app pasa a segundo plano, lo pendiente de guardar se escribe ya.
+  useEffect(() => {
+    const sub = AppState.addEventListener('change', e => {
+      if (e !== 'active' && temporizadorGuardar.current && datosRef.current) {
+        clearTimeout(temporizadorGuardar.current);
+        temporizadorGuardar.current = null;
+        AsyncStorage.setItem(CLAVE_ALMACEN, JSON.stringify(datosRef.current)).catch(() => {});
+      }
+    });
+    return () => sub.remove();
+  }, []);
+
   const actualizar = useCallback(fn => {
     const copia = clonar(datosRef.current);
     const resultado = fn(copia);
     datosRef.current = copia;
     setDatos(copia);
-    AsyncStorage.setItem(CLAVE_ALMACEN, JSON.stringify(copia))
-      .catch(() => avisar('No se pudo guardar en el celular: revisa el espacio libre.'));
+    guardarPronto();
     return resultado;
-  }, [avisar]);
+  }, [guardarPronto]);
 
   // ---------- servidor y sesión ----------
   // conSesion = false para /api/ingresar.
@@ -115,8 +137,17 @@ export function AppProvider({ children }) {
     if (res.status === 403) return { estado: 'cambiar-clave' };
     if (!res.ok) return { estado: 'error' };
     const resp = await res.json();
+    // Sin cambios del servidor ni nada enviado: solo se anotan la hora y el "desde".
+    // Así una sincronización sin novedades no vuelve a procesar ni dibujar el censo.
+    const sinNovedad = resp.completo === false && !(resp.ferreterias || []).length && !(resp.visitas || []).length &&
+      !lote.ferreterias.length && !lote.visitas.length;
+    if (sinNovedad) {
+      Object.assign(datosRef.current, { ultimaSync: new Date().toISOString(), syncDesde: resp.hasta || '' });
+      guardarPronto();
+      return { estado: 'ok', rechazadas: [], cambios: 0 };
+    }
     return actualizar(copia => aplicarRespuesta(copia, lote, resp));
-  }, [actualizar]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [actualizar, guardarPronto]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const sincronizar = useCallback(async manual => {
     if (!CON_SERVIDOR) {

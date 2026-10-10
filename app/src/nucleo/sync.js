@@ -1,11 +1,19 @@
 // Sincronización con el servidor (mismo protocolo que web/db.js y api/src/app.js).
 // Lógica pura: armar el lote y mezclar la respuesta. El envío lo hace src/datos/.
 
-export function armarLote(datos) {
-  return {
+// Sincronización por cambios: se manda `desde` (el `hasta` de la anterior, en hora del
+// servidor) y el servidor responde solo lo que cambió. Una vez al día se pide todo, por si
+// algo quedó desfasado.
+export const COMPLETA_CADA_MS = 24 * 60 * 60 * 1000;
+
+export function armarLote(datos, ahora = new Date()) {
+  const lote = {
     ferreterias: Object.values(datos.pendientes.ferreterias),
     visitas: Object.values(datos.pendientes.visitas)
   };
+  const reciente = datos.ultimaCompleta && ahora - new Date(datos.ultimaCompleta) < COMPLETA_CADA_MS;
+  if (datos.syncDesde && reciente && datos.ferreterias.length) lote.desde = datos.syncDesde;
+  return lote;
 }
 
 function superponer(lista, pendientes) {
@@ -23,10 +31,17 @@ export function aplicarRespuesta(actual, lote, resp, ahora = new Date()) {
       if (enviados.get(id) === JSON.stringify(actual.pendientes[tipo][id])) delete actual.pendientes[tipo][id];
     });
   });
-  actual.ferreterias = superponer(resp.ferreterias || [], actual.pendientes.ferreterias);
-  actual.visitas = superponer(resp.visitas || [], actual.pendientes.visitas);
+  // Respuesta parcial (solo cambios): se mezcla con lo que ya había. Completa: la reemplaza.
+  // Nada se borra en el servidor, así que mezclar nunca deja registros que ya no existen.
+  const parcial = resp.completo === false;
+  const base = (tipo, lista) => (parcial ? superponer(actual[tipo], Object.fromEntries((lista || []).map(x => [x.id, x]))) : (lista || []));
+  actual.ferreterias = superponer(base('ferreterias', resp.ferreterias), actual.pendientes.ferreterias);
+  actual.visitas = superponer(base('visitas', resp.visitas), actual.pendientes.visitas);
   actual.ultimaSync = ahora.toISOString();
-  return { estado: 'ok', rechazadas: resp.rechazadas || [] };
+  actual.syncDesde = resp.hasta || '';
+  if (!parcial) actual.ultimaCompleta = ahora.toISOString();
+  const cambios = (resp.ferreterias || []).length + (resp.visitas || []).length;
+  return { estado: 'ok', rechazadas: resp.rechazadas || [], cambios };
 }
 
 export function contarPendientes(datos) {

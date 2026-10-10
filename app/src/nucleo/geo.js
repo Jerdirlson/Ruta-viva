@@ -159,3 +159,14 @@ export function marcadorEn(grupos, punto, region, tamano, radioDe) {
   });
   return mejor;
 }
+
+// Solo las ferreterías dentro de la vista del mapa (más un margen, para que al mover el
+// mapa no aparezcan de golpe). Dibujar las de fuera no se ve y en Android cuesta mucho:
+// cada marcador con vista propia es un bitmap nativo.
+export function enVista(lista, region, margen = 0.25) {
+  if (!region || !region.latitudeDelta) return lista;
+  const medioLat = region.latitudeDelta * (0.5 + margen);
+  const medioLng = region.longitudeDelta * (0.5 + margen);
+  return lista.filter(f => f.lat != null &&
+    Math.abs(f.lat - region.latitude) <= medioLat && Math.abs(f.lng - region.longitude) <= medioLng);
+}

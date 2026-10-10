@@ -62,8 +62,34 @@ function Principal() {
   );
 }
 
+// Primera descarga del censo (celular recién instalado o sesión nueva): pantalla de carga
+// en vez de una app vacía. Si no hay señal, lo dice y deja reintentar.
+function CargandoCenso() {
+  const { sync, sincronizar } = useApp();
+  const fallo = !sync.sincronizando && ['sin-conexion', 'error'].includes(sync.estado);
+  return (
+    <View style={s.cargando}>
+      <Text style={s.marca}>Socoda</Text>
+      {fallo ? (
+        <>
+          <Text style={s.cargandoTexto}>
+            {sync.estado === 'sin-conexion' ? 'Sin conexión con el servidor. Revisa la señal.' : 'El servidor tuvo un problema.'}
+          </Text>
+          <Text style={s.reintentar} onPress={sincronizar} accessibilityRole="button" testID="reintentar">Reintentar</Text>
+        </>
+      ) : (
+        <>
+          <ActivityIndicator size="large" color={color.marca} />
+          <Text style={s.cargandoTexto}>Descargando el censo del servidor…</Text>
+          <Text style={s.cargandoAyuda}>Solo la primera vez. Después solo baja lo que cambie.</Text>
+        </>
+      )}
+    </View>
+  );
+}
+
 function Raiz() {
-  const { cargado, modo, sesion } = useApp();
+  const { cargado, modo, sesion, datos } = useApp();
   if (!cargado) {
     return <View style={s.cargando}><ActivityIndicator size="large" color={color.marca} /></View>;
   }
@@ -73,6 +99,9 @@ function Raiz() {
   }
   if (modo === 'servidor' && sesion.usuario.debeCambiarClave) {
     return <SafeAreaView style={s.solo}><CambiarClaveScreen /><Toast /></SafeAreaView>;
+  }
+  if (modo === 'servidor' && !datos.ultimaSync) {
+    return <SafeAreaView style={s.solo}><CargandoCenso /><Toast /></SafeAreaView>;
   }
   return (
     <NavigationContainer theme={tema}>
@@ -102,6 +131,9 @@ export default function App() {
 
 const s = StyleSheet.create({
   marca: { fontSize: 24, fontWeight: '800', color: color.marca, letterSpacing: -0.3 },
-  cargando: { flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: color.fondo },
+  cargando: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 16, padding: 24, backgroundColor: color.fondo },
+  cargandoTexto: { fontSize: letra.normal, fontWeight: '700', color: color.texto, textAlign: 'center' },
+  cargandoAyuda: { fontSize: letra.chica, color: color.suave, textAlign: 'center' },
+  reintentar: { fontSize: letra.normal, fontWeight: '800', color: color.marca, padding: 12 },
   solo: { flex: 1, backgroundColor: color.fondo }
 });

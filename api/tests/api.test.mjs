@@ -350,3 +350,25 @@ test('carga inicial del censo: inserta las nuevas, no pisa las existentes y repe
   const otra = await cargarCenso(pool, lista);
   assert.equal(otra.insertadas, 0);
 });
+
+test('sync por cambios: con "desde" solo devuelve lo cambiado después (con un solape)', { skip: omitir }, async () => {
+  const completo = await (await sync({})).json();
+  assert.equal(completo.completo, true);
+  assert.ok(completo.ferreterias.length > 1);
+  const t = completo.hasta;
+  const sinCambios = await (await sync({ desde: new Date(Date.parse(t) + 3 * 60 * 1000).toISOString() })).json();
+  assert.equal(sinCambios.completo, false);
+  assert.deepEqual([sinCambios.ferreterias.length, sinCambios.visitas.length], [0, 0]);
+  await sync({ ferreterias: [ferre('d9')], visitas: [visita('vd9', 'd9')] }, TOKEN_LUIS);
+  const cambios = await (await sync({ desde: t })).json();
+  assert.ok(cambios.ferreterias.some(f => f.id === 'd9') && cambios.visitas.some(v => v.id === 'vd9'));
+  // Una ferretería que no cambia hace una hora no vuelve a bajar.
+  const admin = new pg.Client({ connectionString: RV_TEST_ADMIN_URL });
+  await admin.connect();
+  await admin.query("update ferreterias set actualizada = now() - interval '1 hour' where id = 'a1'");
+  await admin.end();
+  const otra = await (await sync({ desde: t })).json();
+  assert.ok(!otra.ferreterias.some(f => f.id === 'a1'));
+  assert.ok(otra.ferreterias.some(f => f.id === 'd9'));
+  assert.equal((await (await sync({ desde: 'basura' })).json()).completo, true);
+});

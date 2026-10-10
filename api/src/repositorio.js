@@ -2,6 +2,11 @@
 import { validarFerreteria, validarVisita, LIMITES } from './validar.js';
 
 export const MAX_LOTE = 5000;
+// Sincronización por cambios: con `desde` (el `hasta` que devolvió la sincronización
+// anterior, en hora del servidor) solo se devuelve lo que cambió después. El solape cubre
+// transacciones de otros celulares que confirmaron un poco después de tomar la hora;
+// repetir registros no hace daño (el celular los reemplaza por id).
+const SOLAPE_MS = 2 * 60 * 1000;
 
 export class ErrorCliente extends Error {}
 
@@ -102,11 +107,15 @@ export async function sincronizar(pool, lote, usuario) {
     cliente.release();
   }
 
-  return Object.assign(await estado(pool), { rechazadas });
+  return Object.assign(await estado(pool, lote && lote.desde), { rechazadas });
 }
 
-// Estado completo, con los mismos nombres de campo que usa web/db.js.
-export async function estado(pool) {
+// Estado (completo, o solo lo cambiado desde `desde`), con los nombres de campo de web/db.js.
+export async function estado(pool, desde) {
+  const { rows: [{ ahora }] } = await pool.query('select now() as ahora');
+  const t = typeof desde === 'string' ? Date.parse(desde) : NaN;
+  const parcial = Number.isFinite(t);
+  const corte = parcial ? [new Date(t - SOLAPE_MS).toISOString()] : [];
   const f = await pool.query(
     `select id, nombre, direccion, barrio, municipio, telefono, zona, lat, lng,
             tipo, encargado, whatsapp, correo, categoria, cliente_socoda as "clienteSocoda",
@@ -114,13 +123,17 @@ export async function estado(pool) {
             web, horario, calificacion, resenas,
             descartada, descartada_por as "descartadaPor", descartada_fecha as "descartadaFecha"
        from ferreterias
-      order by nombre, id`
+      ${parcial ? 'where actualizada > $1' : ''}
+      order by nombre, id`,
+    corte
   );
   const v = await pool.query(
     `select id, ferreteria_id as "ferreteriaId", to_char(fecha, 'YYYY-MM-DD') as fecha, vendedor,
             resultado, lineas, competencia, notas, creada
        from visitas
-      order by fecha desc, creada desc`
+      ${parcial ? 'where recibida > $1' : ''}
+      order by fecha desc, creada desc`,
+    corte
   );
-  return { ferreterias: f.rows, visitas: v.rows };
+  return { ferreterias: f.rows, visitas: v.rows, hasta: new Date(ahora).toISOString(), completo: !parcial };
 }
