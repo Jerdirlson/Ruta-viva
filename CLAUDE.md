@@ -14,7 +14,9 @@ bash api/run-tests.sh                      # pruebas del API contra Postgres des
 
 ## Reglas
 
-**Los límites viven en tres lugares y deben coincidir:** `api/migrations/*.sql` (restricciones de la tabla), `api/src/validar.js` y `LIMITES` en `web/db.js`. Si se cambia uno, se cambian los tres. Si no, lo que hoy se guarda en el teléfono será rechazado por el servidor mañana.
+**Los límites viven en cuatro lugares y deben coincidir:** `api/migrations/*.sql` (restricciones de la tabla), `api/src/validar.js`, `LIMITES` en `web/db.js` y `LIMITES` en `app/src/nucleo/reglas.js`. Si se cambia uno, se cambian todos. Si no, lo que hoy se guarda en el teléfono será rechazado por el servidor mañana.
+
+**App nativa (`app/`, Expo SDK 57).** `src/nucleo/` es lógica pura (sin React Native) y se prueba con `cd app && npm test`. Solo `src/datos/` y `src/estado/` tocan el celular (AsyncStorage, GPS, archivos). `src/datos/ejemplo.json` es copia de `web/data/ferreterias.json`. `EXPO_PUBLIC_API_URL` se incrusta al compilar: al cambiarla, `npx expo start --clear`. `expo install` no funciona en entornos sin acceso a api.expo.dev: tomar las versiones de `node_modules/expo/bundledNativeModules.json`.
 
 **La ubicación de la ferretería** (`lat`, `lng`) sigue la misma regla de los tres lugares: migración 002, `validarCoordenadas` en `api/src/validar.js` y en `web/db.js`. Van juntas o no van. El servidor nunca borra una ubicación guardada con un envío que no la trae (`coalesce`).
 
@@ -35,4 +37,5 @@ bash api/run-tests.sh                      # pruebas del API contra Postgres des
 ## Estado
 
 - Listo y probado en local: app, sincronización entre varios celulares, cola sin conexión, API, migraciones, respaldo y restauración, mapa, "Cerca de mí", ruta por cercanía y "Guardar ubicación aquí".
-- Pendiente: mapear el Excel real del censo, íconos PNG para instalar, elegir servidor y desplegar, y probar en celulares físicos.
+- App nativa (`app/`): compila para Android e iOS; probada en su versión web con Playwright (modo local y servidor). Falta probarla en un celular físico (Expo Go) y generar el APK con EAS.
+- Pendiente: mapear el Excel real del censo, elegir servidor y desplegar, clave de Google Maps para el APK de Android.

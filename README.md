@@ -8,6 +8,49 @@ App para los vendedores de SOCODA (lavaplatos, cocinas integrales, estufas, camp
 
 Sin login en esta fase: el acceso al servidor se protege con una **clave del equipo** que se escribe una vez en cada celular.
 
+## App nativa (`app/`)
+
+App de Android y iPhone hecha con **Expo / React Native** (SDK 57, la misma base de Raíz). Usa el mismo servidor y la misma sincronización que la versión web. Pantallas: Hoy (lista y mapa nativo), Censo, Ficha, Registrar visita, Nueva ferretería, Resumen y Datos.
+
+### Probarla en tu celular hoy mismo (Expo Go)
+
+Necesitas en tu computador Node 22 y, en el celular, la app **Expo Go** (Play Store o App Store). Ambos en la misma red Wi-Fi.
+
+```bash
+git clone https://github.com/Jerdirlson/Ruta-viva
+cd Ruta-viva/app
+npm install
+npx expo start
+```
+
+Escanea el código QR: en Android con Expo Go; en iPhone con la cámara. La app abre en **modo local** con 12 ferreterías de ejemplo.
+
+Para conectarla al servidor (ver `deploy/`), indica su URL **con `--clear`** (si no, Expo reutiliza la configuración anterior):
+
+```bash
+EXPO_PUBLIC_API_URL=https://TU-DOMINIO.ngrok-free.app npx expo start --clear
+```
+
+Si el celular no está en la misma red, usa `npx expo start --tunnel`.
+
+### Generar el APK (Android)
+
+Con una cuenta gratis de Expo:
+
+```bash
+cd app
+npx eas-cli login
+EXPO_PUBLIC_API_URL=https://TU-DOMINIO GOOGLE_MAPS_ANDROID_API_KEY=... npx eas-cli build -p android --profile preview
+```
+
+EAS compila en sus servidores y entrega un enlace para descargar el APK. El mapa en el APK de Android necesita una clave de Google Maps (`GOOGLE_MAPS_ANDROID_API_KEY`, en Google Cloud con la API "Maps SDK for Android"); en Expo Go no hace falta. Para iPhone se necesita una cuenta de Apple Developer.
+
+### Pruebas de la app
+
+```bash
+cd app && npm test      # 13 pruebas de la lógica (estados, CSV, distancias, ruta, sincronización)
+```
+
 ## Cómo funciona en el celular
 
 Todo se guarda **primero en el teléfono**, así la app funciona sin señal. Cada cambio queda en una cola y se envía al servidor cuando hay conexión: al volver la señal, al abrir la app, cada 2 minutos y con *Datos → Sincronizar ahora*. La barra superior muestra el estado ("Sincronizado 10:42", "2 cambios sin enviar", "Sin conexión"…).
@@ -29,7 +72,8 @@ El mapa usa [Leaflet](https://leafletjs.com) 1.9.4 (incluido en `web/vendor/leaf
 
 | Ruta | Qué hay |
 |---|---|
-| `web/` | La app: `index.html`, `app.js` (pantallas), `db.js` (datos locales y sincronización), `sw.js`, `manifest.json`, datos de ejemplo |
+| `app/` | App nativa (Expo): `src/nucleo/` lógica pura, `src/datos/` celular (almacenamiento, GPS, archivos), `src/pantallas/` |
+| `web/` | Versión web instalable: `index.html`, `app.js` (pantallas), `db.js` (datos locales y sincronización), `sw.js`, `manifest.json`, datos de ejemplo |
 | `api/src/` | `server.js` (arranque), `app.js` (rutas), `repositorio.js` (SQL), `validar.js` (reglas), `migrar.js` (esquema y rol) |
 | `api/migrations/` | Esquema SQL versionado |
 | `api/tests/` | Pruebas de reglas y del API contra Postgres real |

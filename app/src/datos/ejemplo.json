@@ -1,0 +1,14 @@
+[
+  {"id": "f001", "nombre": "Ferretería El Tornillo Feliz", "direccion": "Carrera 27 # 45-10", "barrio": "Cabecera", "municipio": "Bucaramanga", "telefono": "3000000001", "zona": "Zona 1 Norte", "lat": 7.1186, "lng": -73.1105},
+  {"id": "f002", "nombre": "Ferretería La Tuerca Alegre", "direccion": "Calle 36 # 22-54", "barrio": "Centro", "municipio": "Bucaramanga", "telefono": "3000000002", "zona": "Zona 2 Centro", "lat": 7.1193, "lng": -73.1227},
+  {"id": "f003", "nombre": "Ferretería Don Martillo", "direccion": "Carrera 15 # 52-30", "barrio": "Sotomayor", "municipio": "Bucaramanga", "telefono": "3000000003", "zona": "Zona 2 Centro", "lat": 7.115, "lng": -73.114},
+  {"id": "f004", "nombre": "Ferretería El Clavo de Oro", "direccion": "Carrera 8 # 24-40", "barrio": "Cañaveral", "municipio": "Floridablanca", "telefono": "3000000004", "zona": "Zona 4 Metropolitana", "lat": 7.07, "lng": -73.095},
+  {"id": "f005", "nombre": "Ferretería La Bisagra", "direccion": "Carrera 22 # 30-16", "barrio": "Mutis", "municipio": "Bucaramanga", "telefono": "3000000005", "zona": "Zona 1 Norte", "lat": 7.104, "lng": -73.14},
+  {"id": "f006", "nombre": "Ferretería Hogar y Taller Sur", "direccion": "Calle 45 # 8-12", "barrio": "Provenza", "municipio": "Bucaramanga", "telefono": "3000000006", "zona": "Zona 3 Sur", "lat": 7.096, "lng": -73.111},
+  {"id": "f007", "nombre": "Ferretería El Destornillador", "direccion": "Carrera 11 # 5-30", "barrio": "Centro", "municipio": "Girón", "telefono": "3000000007", "zona": "Zona 4 Metropolitana", "lat": 7.068, "lng": -73.169},
+  {"id": "f008", "nombre": "Ferretería Los Tres Tornillos", "direccion": "Calle 20 # 10-45", "barrio": "Centro", "municipio": "Piedecuesta", "telefono": "3000000008", "zona": "Zona 4 Metropolitana", "lat": 6.987, "lng": -73.05},
+  {"id": "f009", "nombre": "Ferretería La Llave Maestra", "direccion": "Diagonal 40 # 13-20", "barrio": "Girardot", "municipio": "Bucaramanga", "telefono": "3000000009", "zona": "Zona 3 Sur"},
+  {"id": "f010", "nombre": "Ferretería El Pernito", "direccion": "Carrera 12 # 3-80", "barrio": "Centro", "municipio": "Girón", "telefono": "3000000010", "zona": "Zona 4 Metropolitana", "lat": 7.07, "lng": -73.172},
+  {"id": "f011", "nombre": "Ferretería Mi Casa Ferretera", "direccion": "Calle 60 # 26-14", "barrio": "La Juventud", "municipio": "Bucaramanga", "telefono": "3000000011", "zona": "Zona 1 Norte"},
+  {"id": "f012", "nombre": "Ferretería La Caja de Herramientas", "direccion": "Carrera 9 # 18-02", "barrio": "Centro", "municipio": "Floridablanca", "telefono": "3000000012", "zona": "Zona 4 Metropolitana", "lat": 7.064, "lng": -73.087}
+]

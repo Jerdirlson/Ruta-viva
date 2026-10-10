@@ -4,3 +4,10 @@ deploy/.env
 *.dump
 *.dump.*
 scratchpad/
+.expo/
+dist/
+web-build/
+app/android/
+app/ios/
+*.apk
+*.aab
