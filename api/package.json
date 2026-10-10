@@ -1,0 +1,20 @@
+{
+  "name": "ruta-viva-api",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "API de Ruta-viva: sincroniza el censo y las visitas de los vendedores SOCODA con Postgres y sirve la app web.",
+  "scripts": {
+    "start": "node src/server.js",
+    "dev": "node --watch src/server.js",
+    "migrar": "node src/migrar.js",
+    "test": "node --test tests/*.test.mjs"
+  },
+  "engines": {
+    "node": ">=22"
+  },
+  "dependencies": {
+    "express": "^5.3.0",
+    "pg": "^8.23.1"
+  }
+}

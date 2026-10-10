@@ -38,6 +38,21 @@ h3 { font-size: 1.2rem; margin: 20px 0 10px; }
 }
 .barra strong { font-size: 1.25rem; letter-spacing: .04em; }
 .barra span { font-size: .95rem; opacity: .92; }
+.estado-sync {
+  align-self: flex-start;
+  margin-top: 8px;
+  padding: 4px 12px;
+  border: 0;
+  border-radius: 999px;
+  font: inherit;
+  font-size: .85rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+.estado-sync:empty { display: none; }
+.estado-neutro { background: #e5e7eb; color: #111; }
+.estado-ok { background: #dcfce7; color: var(--ok); }
+.estado-alerta { background: var(--aviso-fondo); color: var(--aviso-texto); }
 
 main { max-width: 760px; margin: 0 auto; padding: 16px; }
 .cabecera { margin-bottom: 12px; }

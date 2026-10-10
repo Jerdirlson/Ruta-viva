@@ -1,0 +1,157 @@
+# Ruta-viva: Postgres + API (que también sirve la app web) + túnel HTTPS opcional.
+#
+# Infraestructura propia: todo lleva el prefijo `rutaviva`, red y volumen
+# propios, y límites duros de memoria y CPU para poder convivir en una máquina
+# compartida sin afectar a otros servicios.
+#
+#   cd deploy
+#   docker compose up -d --build                     # base + migraciones + API
+#   docker compose --profile tunel up -d             # además, el túnel de ngrok
+#
+# En local, para abrir la app en http://127.0.0.1:8080, sumar el override:
+#   docker compose -f docker-compose.yml -f docker-compose.local.yml up -d --build
+#
+# Ver deploy/README.md antes de la primera vez.
+
+name: rutaviva
+
+x-logs: &logs
+  driver: json-file
+  options:
+    max-size: "10m"   # sin esto los logs crecen sin límite y llenan el disco
+    max-file: "3"
+
+x-imagen-api: &imagen-api
+  build:
+    context: ..
+    dockerfile: api/Dockerfile
+  image: rutaviva-api:local
+
+services:
+  db:
+    image: postgres:16-alpine
+    container_name: rutaviva-db
+    restart: unless-stopped
+
+    # SIN sección `ports`, a propósito: Postgres solo es accesible desde la red
+    # rutaviva_net, nunca desde internet ni desde el host.
+
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-rutaviva}
+      POSTGRES_USER: ${POSTGRES_USER:?falta POSTGRES_USER en .env}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?falta POSTGRES_PASSWORD en .env}
+      POSTGRES_INITDB_ARGS: "--auth-host=scram-sha-256"
+
+    # Ajuste para una máquina pequeña y compartida (3 a 5 vendedores, pocos miles de filas).
+    command:
+      - postgres
+      - -c
+      - shared_buffers=64MB
+      - -c
+      - effective_cache_size=192MB
+      - -c
+      - work_mem=4MB
+      - -c
+      - maintenance_work_mem=32MB
+      - -c
+      - max_connections=30
+      - -c
+      - log_min_duration_statement=1000   # avisa de consultas lentas (>1s)
+
+    mem_limit: 256m
+    memswap_limit: 256m
+    cpus: 0.5
+
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    networks:
+      - rutaviva_net
+
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+
+    logging: *logs
+
+  # Corre una vez en cada `up`: aplica migraciones pendientes y deja listo el rol
+  # rutaviva_app. Es el único servicio que conoce la contraseña del dueño de la base.
+  migrar:
+    <<: *imagen-api
+    container_name: rutaviva-migrar
+    command: ["node", "src/migrar.js"]
+    restart: "no"
+    environment:
+      DATABASE_URL_ADMIN: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-rutaviva}
+      APP_DB_PASSWORD: ${APP_DB_PASSWORD:?falta APP_DB_PASSWORD en .env}
+    depends_on:
+      db:
+        condition: service_healthy
+    mem_limit: 128m
+    cpus: 0.25
+    networks:
+      - rutaviva_net
+    logging: *logs
+
+  api:
+    <<: *imagen-api
+    container_name: rutaviva-api
+    restart: unless-stopped
+
+    # Tampoco se publica al host: el túnel lo alcanza por nombre dentro de
+    # rutaviva_net. En local, docker-compose.local.yml lo publica solo en 127.0.0.1.
+
+    environment:
+      NODE_ENV: production
+      PORT: 3000
+      DATABASE_URL: postgresql://rutaviva_app:${APP_DB_PASSWORD}@db:5432/${POSTGRES_DB:-rutaviva}
+      CLAVE_EQUIPO: ${CLAVE_EQUIPO:?falta CLAVE_EQUIPO en .env}
+
+    depends_on:
+      migrar:
+        condition: service_completed_successfully
+
+    mem_limit: 192m
+    cpus: 0.5
+    networks:
+      - rutaviva_net
+
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3000/api/salud').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+
+    logging: *logs
+
+  # Túnel de ngrok con dominio estático: da una URL fija con HTTPS (necesaria para
+  # instalar la app en el celular) sin abrir ningún puerto en la máquina.
+  # Solo arranca con --profile tunel. Sin `:?` a propósito: así el resto del
+  # compose funciona aunque estas dos variables no estén definidas.
+  tunel:
+    image: ngrok/ngrok:3
+    container_name: rutaviva-tunel
+    profiles: ["tunel"]
+    restart: unless-stopped
+    command: ["http", "http://api:3000", "--url=${NGROK_DOMAIN:-}", "--log=stdout"]
+    environment:
+      NGROK_AUTHTOKEN: ${NGROK_AUTHTOKEN:-}
+    depends_on:
+      api:
+        condition: service_healthy
+    mem_limit: 128m
+    cpus: 0.25
+    networks:
+      - rutaviva_net
+    logging: *logs
+
+volumes:
+  pgdata:
+    name: ${PG_VOLUME:-rutaviva_pgdata}
+
+networks:
+  rutaviva_net:
+    name: rutaviva_net

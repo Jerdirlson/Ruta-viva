@@ -1,80 +1,83 @@
-# SOCODA — Censo de ferreterías (prototipo fase 1)
+# Ruta-viva — SOCODA
 
-App web para vendedores: censo de ferreterías, registro de visitas, vista "Hoy" con rutas y resumen. Funciona en el celular como app instalada. Los datos se guardan en el propio celular (localStorage); no hay login ni backend en esta fase.
+App para los vendedores de SOCODA (lavaplatos, cocinas integrales, estufas, campanas y mesones) que visitan ferreterías en el área metropolitana de Bucaramanga: censo, ruta del día, registro de visitas y resumen del equipo.
+
+- **App web instalable** (`web/`): HTML, CSS y JavaScript sin frameworks, mobile-first, legible al sol. Se instala en la pantalla de inicio del celular.
+- **API propio** (`api/`): Node 22 + Express + Postgres. Sincroniza el censo y las visitas de todos los vendedores y sirve la app desde el mismo origen.
+- **Infraestructura** (`deploy/`): Docker Compose con Postgres sin puertos expuestos, migraciones, rol de base de datos con permisos mínimos, túnel HTTPS opcional y respaldos cifrados.
+
+Sin login en esta fase: el acceso al servidor se protege con una **clave del equipo** que se escribe una vez en cada celular.
+
+## Cómo funciona en el celular
+
+Todo se guarda **primero en el teléfono**, así la app funciona sin señal. Cada cambio queda en una cola y se envía al servidor cuando hay conexión: al volver la señal, al abrir la app, cada 2 minutos y con *Datos → Sincronizar ahora*. La barra superior muestra el estado ("Sincronizado 10:42", "2 cambios sin enviar", "Sin conexión"…).
+
+Las visitas no se duplican aunque se reenvíen. Si dos personas editan la misma ferretería, gana la última que llega al servidor.
 
 ## Estructura
 
-| Archivo | Qué hace |
+| Ruta | Qué hay |
 |---|---|
-| `index.html` | Pantallas, diálogos de visita y de nueva ferretería |
-| `styles.css` | Diseño mobile-first, alto contraste |
-| `app.js` | Interfaz (vistas Hoy, Censo, Resumen, Datos) |
-| `db.js` | **Capa de datos**: única parte que habla con localStorage |
-| `manifest.json`, `sw.js`, `icon.svg` | Instalación en pantalla de inicio y uso sin conexión |
-| `data/ferreterias.json` | 12 ferreterías **ficticias** de ejemplo |
+| `web/` | La app: `index.html`, `app.js` (pantallas), `db.js` (datos locales y sincronización), `sw.js`, `manifest.json`, datos de ejemplo |
+| `api/src/` | `server.js` (arranque), `app.js` (rutas), `repositorio.js` (SQL), `validar.js` (reglas), `migrar.js` (esquema y rol) |
+| `api/migrations/` | Esquema SQL versionado |
+| `api/tests/` | Pruebas de reglas y del API contra Postgres real |
+| `deploy/` | `docker-compose.yml`, `.env.example`, `backup.sh`, `restore.sh`, guía de despliegue |
 
-## Cómo abrirla en la computadora
+## Arrancar en local
 
-La app necesita un servidor local (no sirve abrir `index.html` con doble clic, porque el service worker y la carga de datos no funcionan desde `file://`).
+### Opción A: todo el sistema (recomendada)
+
+Requiere Docker.
 
 ```bash
-cd Ruta-viva
+cd deploy
+cp .env.example .env        # y llenar las claves (ver comentarios del archivo)
+docker compose -f docker-compose.yml -f docker-compose.local.yml up -d --build
+```
+
+Luego abre `http://127.0.0.1:8080`, ve a **Datos** y escribe tu nombre y la clave del equipo (`CLAVE_EQUIPO` de `deploy/.env`). La base empieza vacía: carga el censo con **Datos → Importar censo (CSV)**.
+
+Para detenerlo usa `docker compose down`. Los datos se conservan en el volumen `rutaviva_pgdata`.
+
+### Opción B: solo la app, sin servidor
+
+```bash
+cd web
 python3 -m http.server 8080
 ```
 
-Luego abre `http://localhost:8080` en el navegador.
+Funciona igual que el prototipo de la fase 1: datos de ejemplo y todo guardado solo en ese navegador.
 
 ## Probar en el celular
 
-1. Pon la computadora y el celular en la misma red Wi-Fi.
-2. Averigua la IP de la computadora (por ejemplo `192.168.1.20`) y abre `http://192.168.1.20:8080` en el celular.
-3. **Android (Chrome):** menú ⋮ → *Agregar a pantalla de inicio* (o *Instalar app*).
-   **iPhone (Safari):** botón Compartir → *Agregar a pantalla de inicio*.
+La instalación en la pantalla de inicio y el uso sin conexión requieren **HTTPS**. El compose trae un túnel de ngrok con URL fija:
 
-Nota: el service worker y la instalación requieren HTTPS en un servidor real. Para el piloto con vendedores hay que publicarla en un hosting con HTTPS (por ejemplo GitHub Pages o Netlify). En `http://IP:8080` la app funciona, pero no se instala ni queda disponible sin conexión.
-
-## Primer uso
-
-1. Ve a **Datos** y escribe tu nombre. Se guarda en el celular y queda en cada visita.
-2. **Hoy**: visitas pendientes por zona. Cada tarjeta tiene *Maps*, *Llamar* y *Visitar*.
-3. **Censo**: busca por nombre o barrio y filtra por zona, municipio o estado. *+ Nueva ferretería* agrega una.
-4. **Visitar** → elige resultado, líneas que vende, marca de competencia y notas.
-5. **Resumen**: visitas, compras, clientes nuevos y ferreterías sin visitar hace más de 30 días. Puedes ver 30 días o todo el histórico.
+1. Crea una cuenta gratis en https://dashboard.ngrok.com y reclama un dominio estático.
+2. Pon `NGROK_AUTHTOKEN` y `NGROK_DOMAIN` en `deploy/.env`.
+3. `docker compose --profile tunel up -d`
+4. Abre `https://TU-DOMINIO.ngrok-free.app` en el celular. La primera vez, ngrok muestra un aviso; toca *Visit Site*.
+5. **Android (Chrome):** menú ⋮ → *Instalar app*. **iPhone (Safari):** Compartir → *Agregar a pantalla de inicio*.
 
 ## Importar el censo (CSV)
 
-En **Datos → Importar censo (CSV)** elige un archivo `.csv`.
-
-Columnas reconocidas (los nombres no distinguen mayúsculas ni tildes):
-
-| Columna | Obligatoria | Ejemplo |
-|---|---|---|
-| `nombre` | Sí | Ferretería El Tornillo Feliz |
-| `direccion` | No | Carrera 27 # 45-10 |
-| `barrio` | No | Cabecera |
-| `municipio` | No | Bucaramanga |
-| `telefono` | No | 3000000001 |
-| `zona` | No | Zona 1 Norte |
-| `id` | No | f001 |
-
-Ejemplo:
+**Datos → Importar censo (CSV)**. Columnas reconocidas (sin distinguir mayúsculas ni tildes): `nombre` (obligatoria), `direccion`, `barrio`, `municipio`, `telefono`, `zona` y, opcional, `id`. El separador puede ser `;` o `,`.
 
 ```csv
 nombre;direccion;barrio;municipio;telefono;zona
 Ferretería Ejemplo;Calle 1 # 2-3;Centro;Bucaramanga;3000000000;Zona 2 Centro
 ```
 
-- El separador puede ser `;` o `,`; se detecta solo.
-- Si una fila coincide con una existente (por `id`, o por nombre + dirección + municipio), se actualiza. Si no, se crea.
-- Las columnas que no estén en el archivo no modifican los datos actuales.
-- Las columnas extra se ignoran.
+Si una fila coincide con una existente (por `id`, o por nombre + dirección + municipio), se actualiza; si no, se crea. Las columnas ausentes no borran datos y las columnas extra se ignoran. **El Excel real del censo aún no está mapeado**: cuando esté, se ajusta este formato.
 
-Para respaldar, usa **Datos → Descargar censo (CSV)** (abre en Excel en español) o **Descargar respaldo completo (JSON)**, que incluye también las visitas. Para restaurar, usa **Restaurar respaldo**; esto reemplaza los datos del celular.
+## Pruebas
 
-## Cambiar a una base real más adelante
+```bash
+bash api/run-tests.sh     # 18 pruebas; levanta un Postgres desechable en Docker y lo borra al final
+```
 
-Todo el acceso a datos pasa por `db.js`. Para migrar, reemplaza las funciones de almacenamiento (`leer`, `guardar`) o las funciones públicas del objeto `DB`, manteniendo sus nombres y formas, y `app.js` no necesita cambios.
+Cubren las reglas de validación, la sincronización, la clave del equipo, que solo se sirva `web/`, y que el rol de la app **no pueda** borrar datos ni cambiar el esquema.
 
-## Pendiente
+## Despliegue
 
-Ver la lista de pendientes en el mensaje de cierre de la sesión.
+Ver [`deploy/README.md`](deploy/README.md).

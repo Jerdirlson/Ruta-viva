@@ -1,5 +1,6 @@
 /* Service worker básico: red primero, caché como respaldo sin conexión. */
-const CACHE = 'socoda-v1';
+// Subir la versión al cambiar archivos de la app para que los celulares la renueven.
+const CACHE = 'socoda-v2';
 const ARCHIVOS = [
   'index.html',
   'styles.css',
@@ -28,7 +29,9 @@ self.addEventListener('activate', (e) => {
 
 self.addEventListener('fetch', (e) => {
   const req = e.request;
-  if (req.method !== 'GET' || new URL(req.url).origin !== self.location.origin) return;
+  const url = new URL(req.url);
+  // El API nunca se cachea: sus respuestas siempre deben venir del servidor.
+  if (req.method !== 'GET' || url.origin !== self.location.origin || url.pathname.includes('/api/')) return;
 
   e.respondWith(
     fetch(req)

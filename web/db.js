@@ -1,7 +1,13 @@
 /*
- * Capa de datos de SOCODA.
- * Fase 1: localStorage. Para migrar a una base real, reemplazar leer() y guardar()
- * y mantener la misma API pública para app.js.
+ * Capa de datos de Ruta-viva (SOCODA).
+ *
+ * Local-first: todo se guarda primero en el teléfono (localStorage), así la app
+ * funciona sin señal. Si la app la sirve el API de Ruta-viva (modo "servidor"),
+ * cada cambio queda además en una cola de pendientes que sincronizar() envía
+ * cuando hay conexión; la respuesta trae el censo y las visitas de todo el equipo.
+ *
+ * Abierta desde un servidor estático cualquiera (modo "local") funciona sola en
+ * el teléfono, con datos de ejemplo, como el prototipo de la fase 1.
  */
 (function (global) {
   'use strict';
@@ -9,6 +15,21 @@
   const CLAVE = 'socoda.v1';
   const DIAS_SIN_VISITA = 30;
   const CAMPOS = ['nombre', 'direccion', 'barrio', 'municipio', 'telefono', 'zona'];
+
+  // Mismos límites que api/src/validar.js y api/migrations/001_inicial.sql.
+  // Si se cambia uno, se cambian los tres.
+  const LIMITES = {
+    id: 64,
+    nombre: 120,
+    direccion: 160,
+    barrio: 80,
+    municipio: 60,
+    telefono: 30,
+    zona: 40,
+    vendedor: 60,
+    competencia: 80,
+    notas: 500
+  };
 
   const RESULTADOS = {
     compro: 'Compró',
@@ -35,11 +56,13 @@
   // ---------- utilidades ----------
   const tiene = (obj, k) => Object.prototype.hasOwnProperty.call(obj, k);
   function limpiar(s) { return String(s == null ? '' : s).trim(); }
+  function recortar(k, s) { return limpiar(s).slice(0, LIMITES[k]); }
   function normaliza(s) {
     return limpiar(s).normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().replace(/\s+/g, ' ');
   }
   function nuevoId(prefijo) {
-    return prefijo + Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
+    if (global.crypto && typeof global.crypto.randomUUID === 'function') return prefijo + global.crypto.randomUUID();
+    return prefijo + Date.now().toString(36) + Math.random().toString(36).slice(2, 10);
   }
   function isoDe(d) {
     return [d.getFullYear(), String(d.getMonth() + 1).padStart(2, '0'), String(d.getDate()).padStart(2, '0')].join('-');
@@ -56,7 +79,16 @@
 
   // ---------- almacenamiento ----------
   function vacio() {
-    return { ferreterias: [], visitas: [], vendedorActual: '', semilla: false };
+    return {
+      ferreterias: [],
+      visitas: [],
+      vendedorActual: '',
+      semilla: false,
+      modo: '',            // 'servidor' una vez que el API respondió; nunca vuelve atrás
+      claveEquipo: '',
+      ultimaSync: '',
+      pendientes: { ferreterias: {}, visitas: {} }
+    };
   }
   function leer() {
     try {
@@ -70,21 +102,19 @@
   function guardar(datos) {
     localStorage.setItem(CLAVE, JSON.stringify(datos)); // lanza si el almacenamiento está lleno
   }
+  // En modo servidor, todo cambio local queda pendiente de enviar (el último gana).
+  function encolar(datos, tipo, reg) {
+    if (datos.modo === 'servidor') datos.pendientes[tipo][reg.id] = reg;
+  }
 
   // ---------- ferreterías ----------
   function claveDup(f) {
     return [normaliza(f.nombre), normaliza(f.direccion), normaliza(f.municipio)].join('|');
   }
   function construirFerreteria(f, id) {
-    return {
-      id: id,
-      nombre: limpiar(f.nombre),
-      direccion: limpiar(f.direccion),
-      barrio: limpiar(f.barrio),
-      municipio: limpiar(f.municipio),
-      telefono: limpiar(f.telefono),
-      zona: limpiar(f.zona)
-    };
+    const reg = { id: recortar('id', id) };
+    CAMPOS.forEach(c => { reg[c] = recortar(c, f[c]); });
+    return reg;
   }
   function guardarFerreteria(f) {
     const datos = leer();
@@ -93,6 +123,7 @@
     if (!reg.nombre) throw new Error('El nombre es obligatorio');
     const i = datos.ferreterias.findIndex(x => x.id === id);
     if (i >= 0) datos.ferreterias[i] = reg; else datos.ferreterias.push(reg);
+    encolar(datos, 'ferreterias', reg);
     guardar(datos);
     return reg;
   }
@@ -106,14 +137,15 @@
       id: nuevoId('v_'),
       ferreteriaId: v.ferreteriaId,
       fecha: v.fecha || hoyISO(),
-      vendedor: limpiar(v.vendedor),
+      vendedor: recortar('vendedor', v.vendedor),
       resultado: v.resultado,
-      lineas: (Array.isArray(v.lineas) ? v.lineas : []).filter(l => tiene(LINEAS, l)),
-      competencia: limpiar(v.competencia),
-      notas: limpiar(v.notas),
+      lineas: [...new Set((Array.isArray(v.lineas) ? v.lineas : []).filter(l => tiene(LINEAS, l)))],
+      competencia: recortar('competencia', v.competencia),
+      notas: recortar('notas', v.notas),
       creada: new Date().toISOString()
     };
     datos.visitas.push(visita);
+    encolar(datos, 'visitas', visita);
     guardar(datos);
     return visita;
   }
@@ -192,7 +224,7 @@
   function obtenerVendedor() { return leer().vendedorActual; }
   function fijarVendedor(nombre) {
     const datos = leer();
-    datos.vendedorActual = limpiar(nombre).slice(0, 60);
+    datos.vendedorActual = recortar('vendedor', nombre);
     guardar(datos);
   }
 
@@ -206,7 +238,7 @@
   function exportarCSV() {
     const cabecera = ['id'].concat(CAMPOS);
     const filas = [cabecera.join(';')].concat(
-      leer().ferreterias.map(f => cabecera.map(c => celdaCSV(f[c] || (c === 'id' ? f.id : ''))).join(';'))
+      leer().ferreterias.map(f => cabecera.map(c => celdaCSV(f[c])).join(';'))
     );
     return '﻿' + filas.join('\r\n');
   }
@@ -256,10 +288,13 @@
       const existente = (r.id && datos.ferreterias.find(x => x.id === r.id)) ||
                         datos.ferreterias.find(x => claveDup(x) === claveDup(r));
       if (existente) {
-        campos.forEach(c => { existente[c] = r[c]; });
+        campos.forEach(c => { existente[c] = recortar(c, r[c]); });
+        encolar(datos, 'ferreterias', existente);
         cont.actualizadas++;
       } else {
-        datos.ferreterias.push(construirFerreteria(r, r.id || nuevoId('f_')));
+        const nueva = construirFerreteria(r, r.id || nuevoId('f_'));
+        datos.ferreterias.push(nueva);
+        encolar(datos, 'ferreterias', nueva);
         cont.nuevas++;
       }
     });
@@ -268,19 +303,126 @@
   }
 
   // ---------- respaldo JSON ----------
-  function exportarBackup() { return JSON.stringify(leer(), null, 2); }
+  // La clave del equipo nunca sale en el respaldo.
+  function exportarBackup() {
+    const d = leer();
+    delete d.claveEquipo;
+    return JSON.stringify(d, null, 2);
+  }
   function importarBackup(texto) {
     const d = JSON.parse(texto);
     if (!d || !Array.isArray(d.ferreterias) || !Array.isArray(d.visitas)) {
       throw new Error('El archivo no es un respaldo de SOCODA');
     }
-    guardar(Object.assign(vacio(), d, { semilla: true }));
+    const actual = leer();
+    const nuevo = Object.assign(vacio(), d, {
+      semilla: true,
+      modo: actual.modo,
+      claveEquipo: actual.claveEquipo,
+      ultimaSync: actual.ultimaSync,
+      pendientes: vacio().pendientes
+    });
+    // En modo servidor, restaurar = volver a enviar todo (las visitas no se duplican).
+    nuevo.ferreterias.forEach(f => encolar(nuevo, 'ferreterias', f));
+    nuevo.visitas.forEach(v => encolar(nuevo, 'visitas', v));
+    guardar(nuevo);
+  }
+
+  // ---------- servidor y sincronización ----------
+  const CABECERAS = { 'ngrok-skip-browser-warning': '1' };
+
+  // 'servidor': la sirve el API de Ruta-viva. 'local': servidor estático sin API.
+  // 'desconocido': sin conexión; se queda con lo que ya sabía.
+  async function detectarServidor() {
+    let modo = 'desconocido';
+    try {
+      const r = await fetch('api/salud', { cache: 'no-store', headers: CABECERAS });
+      const j = await r.json().catch(() => null);
+      modo = j && j.app === 'ruta-viva' ? 'servidor' : 'local';
+    } catch (e) {
+      modo = 'desconocido';
+    }
+    if (modo === 'servidor') {
+      const datos = leer();
+      if (datos.modo !== 'servidor') { datos.modo = 'servidor'; guardar(datos); }
+    }
+    return leer().modo === 'servidor' ? 'servidor' : modo;
+  }
+
+  function fijarClaveEquipo(clave) {
+    const datos = leer();
+    datos.claveEquipo = limpiar(clave);
+    guardar(datos);
+  }
+
+  function estadoSync() {
+    const d = leer();
+    return {
+      modo: d.modo === 'servidor' ? 'servidor' : 'local',
+      tieneClave: !!d.claveEquipo,
+      pendientes: Object.keys(d.pendientes.ferreterias).length + Object.keys(d.pendientes.visitas).length,
+      ultimaSync: d.ultimaSync
+    };
+  }
+
+  function superponer(lista, pendientes) {
+    const mapa = new Map(lista.map(x => [x.id, x]));
+    Object.values(pendientes).forEach(p => mapa.set(p.id, p));
+    return [...mapa.values()];
+  }
+
+  let enCurso = null;
+  // Una sola sincronización a la vez; las llamadas simultáneas comparten el resultado.
+  function sincronizar() {
+    if (!enCurso) enCurso = hacerSync().finally(() => { enCurso = null; });
+    return enCurso;
+  }
+
+  async function hacerSync() {
+    const datos = leer();
+    if (datos.modo !== 'servidor') return { estado: 'local' };
+    if (!datos.claveEquipo) return { estado: 'sin-clave' };
+
+    const lote = {
+      ferreterias: Object.values(datos.pendientes.ferreterias),
+      visitas: Object.values(datos.pendientes.visitas)
+    };
+    let res;
+    try {
+      res = await fetch('api/sync', {
+        method: 'POST',
+        cache: 'no-store',
+        headers: Object.assign({ 'Content-Type': 'application/json', 'X-Clave-Equipo': datos.claveEquipo }, CABECERAS),
+        body: JSON.stringify(lote)
+      });
+    } catch (e) {
+      return { estado: 'sin-conexion' };
+    }
+    if (res.status === 401) return { estado: 'clave-incorrecta' };
+    if (!res.ok) return { estado: 'error', mensaje: 'El servidor respondió ' + res.status };
+    const resp = await res.json();
+
+    // Lo enviado ya está en la respuesta (o fue rechazado): sale de la cola, salvo
+    // que haya cambiado mientras viajaba. Lo nuevo sigue pendiente y se superpone.
+    const actual = leer();
+    ['ferreterias', 'visitas'].forEach(tipo => {
+      const enviados = new Map(lote[tipo].map(r => [r.id, JSON.stringify(r)]));
+      Object.keys(actual.pendientes[tipo]).forEach(id => {
+        if (enviados.get(id) === JSON.stringify(actual.pendientes[tipo][id])) delete actual.pendientes[tipo][id];
+      });
+    });
+    actual.ferreterias = superponer(resp.ferreterias || [], actual.pendientes.ferreterias);
+    actual.visitas = superponer(resp.visitas || [], actual.pendientes.visitas);
+    actual.ultimaSync = new Date().toISOString();
+    guardar(actual);
+    return { estado: 'ok', rechazadas: resp.rechazadas || [] };
   }
 
   // ---------- datos de ejemplo ----------
-  async function cargarSemillaSiVacio() {
+  // Solo en modo local: nunca se mezclan datos ficticios con el censo real del servidor.
+  async function cargarSemillaSiVacio(modo) {
     const datos = leer();
-    if (datos.semilla || datos.ferreterias.length) return false;
+    if (modo !== 'local' || datos.modo === 'servidor' || datos.semilla || datos.ferreterias.length) return false;
     const res = await fetch('data/ferreterias.json');
     if (!res.ok) throw new Error('No se pudo leer data/ferreterias.json');
     datos.ferreterias = await res.json();
@@ -293,6 +435,7 @@
     RESULTADOS: RESULTADOS,
     LINEAS: LINEAS,
     ESTADOS: ESTADOS,
+    LIMITES: LIMITES,
     DIAS_SIN_VISITA: DIAS_SIN_VISITA,
     hoyISO: hoyISO,
     diasDesde: diasDesde,
@@ -307,6 +450,10 @@
     importarCSV: importarCSV,
     exportarBackup: exportarBackup,
     importarBackup: importarBackup,
+    detectarServidor: detectarServidor,
+    fijarClaveEquipo: fijarClaveEquipo,
+    estadoSync: estadoSync,
+    sincronizar: sincronizar,
     cargarSemillaSiVacio: cargarSemillaSiVacio
   };
 })(window);

@@ -1,0 +1,72 @@
+# Despliegue de Ruta-viva
+
+Todo corre en Docker con el prefijo `rutaviva`, red y volumen propios, y límites duros de recursos. Así puede convivir en una máquina compartida sin afectar a otros servicios.
+
+| Servicio | Qué hace | Memoria | CPU |
+|---|---|---|---|
+| `rutaviva-db` | Postgres 16. **Sin puertos publicados**: solo accesible desde la red `rutaviva_net` | 256 MB | 0,5 |
+| `rutaviva-migrar` | Corre en cada `up`: aplica migraciones y deja listo el rol de la app; luego termina | 128 MB | 0,25 |
+| `rutaviva-api` | API + app web. Tampoco publica puertos en el servidor | 192 MB | 0,5 |
+| `rutaviva-tunel` | ngrok con dominio fijo y HTTPS (perfil `tunel`, opcional) | 128 MB | 0,25 |
+
+En total usa hasta unos 580 MB con el túnel incluido.
+
+## Primera vez
+
+```bash
+cd deploy
+cp .env.example .env
+chmod 600 .env
+# Generar los secretos (no inventarlos):
+#   POSTGRES_PASSWORD y APP_DB_PASSWORD:  openssl rand -hex 32
+#   CLAVE_EQUIPO:                          openssl rand -hex 16
+docker compose up -d --build
+docker compose ps        # db y api "healthy", migrar "Exited (0)"
+docker compose --profile tunel up -d     # cuando estén NGROK_AUTHTOKEN y NGROK_DOMAIN
+```
+
+Para entregar la clave del equipo a los vendedores, úsala por un canal privado. Cambiarla obliga a escribirla de nuevo en cada celular.
+
+## Cómo funciona la seguridad de la base
+
+Hay dos roles, y la diferencia importa:
+
+- **`rutaviva_admin`** (`POSTGRES_USER`) es dueño de las tablas. Solo lo usa `migrar`.
+- **`rutaviva_app`** es con el que se conecta el API. Solo puede leer, insertar y actualizar `ferreterias` y `visitas`. **No puede borrar** ni tocar el esquema; `api/tests/api.test.mjs` lo verifica intentándolo.
+
+`migrar` crea el rol si falta y le fija la contraseña en cada arranque. Para rotarla, cambia `APP_DB_PASSWORD` en `.env` y corre `docker compose up -d`.
+
+## Actualizar
+
+```bash
+git pull
+docker compose up -d --build
+```
+
+Si cambiaste archivos de `web/`, sube también `CACHE` en `web/sw.js` para que los celulares descarguen la versión nueva.
+
+## Respaldos
+
+```bash
+./backup.sh                          # a /var/backups/rutaviva, conserva 14
+crontab -e                           # todos los días a las 2:15 a. m.:
+15 2 * * * /srv/rutaviva/deploy/backup.sh >> /var/log/rutaviva-backup.log 2>&1
+```
+
+- Cifrado recomendado: `BACKUP_RECIPIENT=age1…` en `.env` (clave **pública** de age; la privada se guarda fuera del servidor). Alternativa: `BACKUP_PASSPHRASE` con gpg. Sin ninguna de las dos, avisa que queda sin cifrar.
+- Cada respaldo se verifica leyéndolo antes de darlo por bueno.
+- **Un respaldo en el mismo disco no protege de perder el servidor:** copia los archivos a otro lugar.
+
+### Restaurar
+
+```bash
+./restore.sh /var/backups/rutaviva/rutaviva-AAAAMMDD-HHMMSS.dump.age   # con AGE_IDENTITY=/ruta/clave.txt
+```
+
+Detiene el API, reemplaza los datos (pide escribir `restaurar` para confirmar), reafirma permisos y vuelve a levantar el API.
+
+## Problemas comunes
+
+- **"Invalid URL" en los logs del API:** una contraseña generada con base64 tiene `/`, `+` o `=`. Usa `openssl rand -hex 32`.
+- **El celular dice "Clave del equipo incorrecta":** compara con `CLAVE_EQUIPO` de `.env`.
+- **`migrar` termina con error:** `docker logs rutaviva-migrar`. El API no arranca hasta que `migrar` termine bien, a propósito.

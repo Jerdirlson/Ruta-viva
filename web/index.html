@@ -15,6 +15,7 @@
   <header class="barra">
     <strong>SOCODA</strong>
     <span>Censo de ferreterías</span>
+    <button id="estado-sync" class="estado-sync" data-ir="datos" aria-live="polite"></button>
   </header>
 
   <main id="vista"></main>
@@ -36,7 +37,7 @@
       </header>
 
       <label class="campo">Fecha
-        <input type="date" name="fecha" required>
+        <input type="date" name="fecha" min="2000-01-01" max="2100-12-31" required>
       </label>
 
       <fieldset class="campo">

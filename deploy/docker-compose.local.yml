@@ -1,0 +1,8 @@
+# Solo para desarrollo local: publica el API en 127.0.0.1 (no en la red).
+#
+#   docker compose -f docker-compose.yml -f docker-compose.local.yml up -d --build
+#   abrir http://127.0.0.1:8080
+services:
+  api:
+    ports:
+      - "127.0.0.1:${PUERTO_LOCAL:-8080}:3000"

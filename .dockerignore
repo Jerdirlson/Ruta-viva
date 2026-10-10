@@ -1,0 +1,10 @@
+.git
+**/node_modules
+**/.env
+**/*.env
+deploy
+api/tests
+api/run-tests.sh
+scratchpad
+*.dump
+*.dump.*

@@ -111,6 +111,11 @@
 
     let html = '<section class="cabecera"><h2>Hoy</h2><p>' + esc(fecha) +
       ' · <strong>' + pendientes.length + ' pendientes</strong></p></section>';
+    const sync = DB.estadoSync();
+    if (sync.modo === 'servidor' && !sync.tieneClave) {
+      html += '<div class="aviso-bloque">Escribe la clave del equipo en <button class="enlace" data-ir="datos">Datos</button> ' +
+        'para enviar tus visitas y ver las del equipo.</div>';
+    }
     if (!DB.obtenerVendedor()) {
       html += '<div class="aviso-bloque">Escribe tu nombre en <button class="enlace" data-ir="datos">Datos</button> ' +
         'para que tus visitas queden a tu nombre.</div>';
@@ -218,8 +223,24 @@
         (f.ultima ? 'última visita ' + fechaCorta(f.ultima.fecha) : 'nunca visitada') + '</span></li>');
   }
 
+  function bloqueSync() {
+    const s = DB.estadoSync();
+    if (s.modo !== 'servidor') {
+      return '<div class="bloque"><h3>Sincronización</h3>' +
+        '<p class="ayuda">Modo local: esta copia de la app no está conectada a un servidor, así que los datos ' +
+        'solo viven en este celular. Descarga respaldos con frecuencia.</p></div>';
+    }
+    return '<div class="bloque"><h3>Sincronización</h3>' +
+      '<label class="campo">Clave del equipo' +
+        '<input id="clave-equipo" type="password" autocomplete="off" placeholder="' +
+          (s.tieneClave ? 'Guardada. Escribe otra para cambiarla' : 'La entrega el administrador') + '"></label>' +
+      '<p class="ayuda">' + esc(estadoActual().texto) + '</p>' +
+      '<button class="btn btn-pri btn-ancho" data-accion="sync">Sincronizar ahora</button></div>';
+  }
+
   function vistaDatos() {
     return '<section class="cabecera"><h2>Datos</h2><p>' + DB.censo().length + ' ferreterías en este celular</p></section>' +
+      bloqueSync() +
       '<div class="bloque">' +
         '<label class="campo">Tu nombre (vendedor)' +
           '<input id="vendedor" value="' + esc(DB.obtenerVendedor()) + '" placeholder="Nombre y apellido" maxlength="60"></label>' +
@@ -243,6 +264,83 @@
     main.innerHTML = (vistas[ui.vista] || vistaHoy)();
     document.querySelectorAll('[data-nav]').forEach(b => b.classList.toggle('activo', b.dataset.ir === ui.vista));
     if (ui.vista === 'censo') pintarLista();
+    pintarEstado();
+  }
+
+  // ---------- sincronización ----------
+  const MENSAJES_SYNC = {
+    ok: 'Sincronizado',
+    'sin-clave': 'Escribe la clave del equipo',
+    'clave-incorrecta': 'Clave del equipo incorrecta',
+    'sin-conexion': 'Sin conexión: los cambios quedan guardados en el celular',
+    error: 'El servidor tuvo un problema; se reintenta después'
+  };
+  let ultimoSync = null;
+  let sincronizandoAhora = false;
+  let temporizadorSync = null;
+
+  function horaCorta(iso) {
+    return new Date(iso).toLocaleTimeString('es-CO', { hour: '2-digit', minute: '2-digit' });
+  }
+
+  function estadoActual() {
+    const s = DB.estadoSync();
+    if (s.modo !== 'servidor') return { texto: 'Modo local · datos solo en este celular', clase: 'neutro' };
+    if (sincronizandoAhora) return { texto: 'Sincronizando…', clase: 'neutro' };
+    if (!s.tieneClave) return { texto: 'Falta la clave del equipo', clase: 'alerta' };
+    const r = ultimoSync && ultimoSync.estado;
+    const pend = s.pendientes ? ' · ' + s.pendientes + ' sin enviar' : '';
+    if (r === 'clave-incorrecta') return { texto: 'Clave del equipo incorrecta' + pend, clase: 'alerta' };
+    if (r === 'sin-conexion') return { texto: 'Sin conexión' + pend, clase: 'alerta' };
+    if (r === 'error') return { texto: 'Error del servidor' + pend, clase: 'alerta' };
+    if (s.pendientes) return { texto: s.pendientes + ' cambio(s) sin enviar', clase: 'alerta' };
+    if (s.ultimaSync) return { texto: 'Sincronizado ' + horaCorta(s.ultimaSync), clase: 'ok' };
+    return { texto: 'Sin sincronizar todavía', clase: 'neutro' };
+  }
+
+  function pintarEstado() {
+    const el = document.getElementById('estado-sync');
+    const e = estadoActual();
+    el.textContent = e.texto;
+    el.className = 'estado-sync estado-' + e.clase;
+  }
+
+  // Tras sincronizar se repinta, salvo que la persona esté escribiendo o tenga un diálogo abierto.
+  function repintarSiSeguro() {
+    const activo = document.activeElement;
+    const ocupado = document.querySelector('dialog[open]') ||
+      (activo && /^(INPUT|TEXTAREA|SELECT)$/.test(activo.tagName));
+    if (ocupado) pintarEstado(); else render();
+  }
+
+  async function sincronizarAhora(manual) {
+    if (DB.estadoSync().modo !== 'servidor') {
+      if (manual) toast('Modo local: no hay servidor');
+      return;
+    }
+    sincronizandoAhora = true;
+    pintarEstado();
+    try {
+      ultimoSync = await DB.sincronizar();
+    } catch (e) {
+      console.error(e);
+      ultimoSync = { estado: 'error' };
+    } finally {
+      sincronizandoAhora = false;
+    }
+    const rech = ultimoSync.rechazadas || [];
+    if (rech.length) {
+      toast(rech.length + ' registro(s) rechazado(s) por el servidor: ' + rech[0].motivo);
+    } else if (manual) {
+      toast(MENSAJES_SYNC[ultimoSync.estado] || 'Listo');
+    }
+    repintarSiSeguro();
+  }
+
+  // Después de cada cambio: espera un instante por si vienen más y envía todo junto.
+  function programarSync() {
+    clearTimeout(temporizadorSync);
+    temporizadorSync = setTimeout(() => sincronizarAhora(false), 800);
   }
 
   // ---------- diálogos ----------
@@ -273,6 +371,7 @@
 
   // ---------- acciones ----------
   function accion(nombre) {
+    if (nombre === 'sync') return sincronizarAhora(true);
     try {
       const hoy = DB.hoyISO();
       if (nombre === 'csv') descargar('censo_socoda_' + hoy + '.csv', DB.exportarCSV(), 'text/csv;charset=utf-8');
@@ -322,10 +421,19 @@
         toast('Nombre guardado');
         return render();
       }
+      if (t.id === 'clave-equipo') {
+        if (!t.value.trim()) return;
+        DB.fijarClaveEquipo(t.value);
+        t.value = '';
+        t.blur();
+        toast('Clave guardada');
+        return sincronizarAhora(true);
+      }
       if (t.id === 'archivo-csv' && t.files[0]) {
         const r = DB.importarCSV(await t.files[0].text());
         t.value = '';
         toast('Listo: ' + r.nuevas + ' nuevas, ' + r.actualizadas + ' actualizadas, ' + r.omitidas + ' omitidas');
+        programarSync();
         return render();
       }
       if (t.id === 'archivo-backup' && t.files[0]) {
@@ -333,6 +441,7 @@
         DB.importarBackup(await t.files[0].text());
         t.value = '';
         toast('Respaldo restaurado');
+        programarSync();
         return render();
       }
     } catch (err) {
@@ -372,6 +481,7 @@
         toast('Ferretería agregada');
       }
       render();
+      programarSync();
     } catch (err) {
       toast(err.message || 'No se pudo guardar');
     }
@@ -379,8 +489,9 @@
 
   // ---------- arranque ----------
   async function iniciar() {
+    const modo = await DB.detectarServidor();
     try {
-      await DB.cargarSemillaSiVacio();
+      await DB.cargarSemillaSiVacio(modo);
     } catch (e) {
       toast('No se pudieron cargar los datos de ejemplo');
       console.error(e);
@@ -388,6 +499,13 @@
     render();
     if ('serviceWorker' in navigator) {
       navigator.serviceWorker.register('sw.js').catch(err => console.warn('Service worker no registrado', err));
+    }
+    if (DB.estadoSync().modo === 'servidor') {
+      sincronizarAhora(false);
+      // Reintenta al recuperar señal, al volver a la app y cada 2 minutos mientras está abierta.
+      window.addEventListener('online', () => sincronizarAhora(false));
+      document.addEventListener('visibilitychange', () => { if (!document.hidden) sincronizarAhora(false); });
+      setInterval(() => { if (!document.hidden) sincronizarAhora(false); }, 120000);
     }
   }
   iniciar();
