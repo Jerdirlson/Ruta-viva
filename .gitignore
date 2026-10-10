@@ -11,3 +11,7 @@ app/android/
 app/ios/
 *.apk
 *.aab
+
+# Clave de Google Places (solo local)
+api/.env.places
+api/datos-google/

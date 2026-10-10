@@ -9,6 +9,7 @@ module.exports = {
   expo: {
     name: 'Ruta-viva',
     slug: 'ruta-viva',
+    owner: 'jerdirlson',
     version: '1.0.0',
     orientation: 'portrait',
     userInterfaceStyle: 'light',
@@ -36,6 +37,9 @@ module.exports = {
     },
     web: {
       favicon: './assets/favicon.png'
+    },
+    extra: {
+      eas: { projectId: '7cd40a9d-a2fe-457a-bd19-4a1883a7df9b' }
     },
     plugins: [
       ['expo-location', {
