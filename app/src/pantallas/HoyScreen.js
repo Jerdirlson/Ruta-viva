@@ -17,6 +17,9 @@ export default function HoyScreen({ navigation }) {
   // Varias ferreterías en el mismo sitio (mismo edificio): se elige de una lista.
   const [varias, setVarias] = useState(null);
   const elegir = f => { setVarias(null); setSeleccionada(f); };
+  // Leyenda del mapa como filtro: colores ocultos (por ejemplo, ver solo los clientes).
+  const [ocultos, setOcultos] = useState([]);
+  const alternarColor = c => setOcultos(o => (o.includes(c) ? o.filter(x => x !== c) : o.concat(c)));
 
   const todas = useMemo(() => pendientesDe(censo).sort(ordenZona), [censo]);
   const porZona = useMemo(() => {
@@ -82,14 +85,17 @@ export default function HoyScreen({ navigation }) {
   );
 
   if (vista === 'mapa') {
-    const delMapa = censo.filter(f => f.estado !== 'descartada' && (!zonaActiva || grupoDe(f) === zonaActiva));
+    const delMapa = censo.filter(f => f.estado !== 'descartada' && (!zonaActiva || grupoDe(f) === zonaActiva) && !ocultos.includes(colorPin(f)));
     const sinUbicar = delMapa.filter(f => f.lat == null).length;
     return (
       <View style={s.pantalla}>
         <View style={s.cabeceraMapa}>{cabecera}</View>
         <View style={s.leyenda}>
           {[['rojo', 'Pendiente'], ['amarillo', 'Pidió visita'], ['verde', 'Cliente'], ['gris', 'Visitada']].map(([c, t]) => (
-            <View key={c} style={s.itemLeyenda}><View style={[s.punto, { backgroundColor: color.pin[c] }]} /><Text style={s.textoLeyenda}>{t}</Text></View>
+            <Pressable key={c} onPress={() => alternarColor(c)} accessibilityRole="button" accessibilityState={{ selected: !ocultos.includes(c) }}
+              hitSlop={8} style={[s.itemLeyenda, ocultos.includes(c) && { opacity: 0.35 }]} testID={'leyenda-' + c}>
+              <View style={[s.punto, { backgroundColor: color.pin[c] }]} /><Text style={[s.textoLeyenda, ocultos.includes(c) && s.tachado]}>{t}</Text>
+            </Pressable>
           ))}
           {sinUbicar ? <Text style={s.textoLeyenda}>{'· ' + sinUbicar + ' sin ubicar'}</Text> : null}
         </View>
@@ -155,7 +161,8 @@ const s = StyleSheet.create({
   grupo: { marginTop: 6, fontSize: letra.mini, fontWeight: '800', letterSpacing: 1, textTransform: 'uppercase', color: color.suave },
   vacio: { color: color.suave, paddingVertical: 16, fontSize: letra.normal },
   leyenda: { flexDirection: 'row', flexWrap: 'wrap', gap: 12, paddingHorizontal: 16, paddingBottom: 8 },
-  itemLeyenda: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  itemLeyenda: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingVertical: 4 },
+  tachado: { textDecorationLine: 'line-through' },
   punto: { width: 14, height: 14, borderRadius: 7, borderWidth: 2, borderColor: color.fondo },
   textoLeyenda: { fontSize: letra.mini, color: color.suave },
   mapa: { flex: 1, minHeight: 280, marginHorizontal: 16, marginBottom: 16, borderRadius: 14, overflow: 'hidden', borderWidth: 1, borderColor: color.linea },

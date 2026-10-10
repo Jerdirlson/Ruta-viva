@@ -11,11 +11,12 @@
 // reciben el toque y llega al mapa. Por eso cada toque del mapa se resuelve con la misma
 // geometría con que se dibujan los marcadores (marcadorEn en nucleo/geo).
 import React, { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { StyleSheet, Text, View } from 'react-native';
+import { Platform, StyleSheet, Text, View } from 'react-native';
 import MapView, { Marker } from 'react-native-maps';
 import { useFocusEffect } from '@react-navigation/native';
 import { color } from '../tema';
 import { colorPin } from '../nucleo/reglas';
+import { pedirPermisoUbicacion } from '../datos/ubicacion';
 import { agrupar, enVista, extensionM, marcadorEn, ordenarPorCercania, MISMO_SITIO_M, TOQUE_PUNTO_PX, GRUPO_MAX_PX } from '../nucleo/geo';
 
 const CENTRO_AMB = { latitude: 7.1, longitude: -73.12, latitudeDelta: 0.18, longitudeDelta: 0.18 }; // área metropolitana de Bucaramanga
@@ -81,6 +82,34 @@ export default function MapaHoy({ lista, posicion, elegidaId, onSeleccionar, onE
   // marcadores: Android puede haber dejado sus fotos desactualizadas.
   const [vuelta, setVuelta] = useState(0);
   useFocusEffect(useCallback(() => { setVuelta(v => v + 1); }, []));
+
+  // Punto azul del vendedor: lo dibuja el mapa nativo con el permiso de ubicación.
+  const [conPermiso, setConPermiso] = useState(false);
+  useEffect(() => { pedirPermisoUbicacion().then(setConPermiso); }, []);
+
+  // La región visible manda el agrupamiento y los toques. No se confía solo en
+  // onRegionChangeComplete (en Android no siempre llega): al moverse el mapa se le
+  // preguntan sus bordes reales un instante después de que se detiene.
+  const preguntarRegion = useRef(null);
+  const leerRegion = useCallback(() => {
+    clearTimeout(preguntarRegion.current);
+    preguntarRegion.current = setTimeout(async () => {
+      try {
+        const b = mapa.current && await mapa.current.getMapBoundaries();
+        if (!b) return;
+        const r = {
+          latitude: (b.northEast.latitude + b.southWest.latitude) / 2,
+          longitude: (b.northEast.longitude + b.southWest.longitude) / 2,
+          latitudeDelta: Math.abs(b.northEast.latitude - b.southWest.latitude),
+          longitudeDelta: Math.abs(b.northEast.longitude - b.southWest.longitude)
+        };
+        if (r.latitudeDelta > 0 && r.longitudeDelta > 0) setRegion(r);
+      } catch (e) {
+        // Sin bordes todavía (mapa cargando): se queda la región anterior.
+      }
+    }, 250);
+  }, []);
+  useEffect(() => () => clearTimeout(preguntarRegion.current), []);
   const ubicadas = useMemo(() => lista.filter(f => f.lat != null), [lista]);
   // Solo lo que está en la vista: de cerca serían cientos de marcadores fuera de pantalla.
   const grupos = useMemo(() => agrupar(enVista(ubicadas, region), region, tamano, colorPin), [ubicadas, region, tamano]);
@@ -133,10 +162,11 @@ export default function MapaHoy({ lista, posicion, elegidaId, onSeleccionar, onE
         ref={mapa}
         style={StyleSheet.absoluteFill}
         initialRegion={CENTRO_AMB}
-        onMapReady={ajustar}
-        onRegionChangeComplete={setRegion}
-        showsUserLocation={!!posicion}
-        showsMyLocationButton={false}
+        onMapReady={() => { ajustar(); leerRegion(); }}
+        onRegionChange={leerRegion}
+        onRegionChangeComplete={r => { setRegion(r); leerRegion(); }}
+        showsUserLocation={conPermiso || !!posicion}
+        showsMyLocationButton={Platform.OS === 'android' && conPermiso}
         moveOnMarkerPress={false}
         toolbarEnabled={false}
         onPress={tocarMapa}
@@ -147,6 +177,9 @@ export default function MapaHoy({ lista, posicion, elegidaId, onSeleccionar, onE
           return <Marcador key={key} g={g} elegida={elegida} onTocar={tocarMarcador} />;
         })}
       </MapView>
+      <Text style={s.diagnostico} pointerEvents="none" testID="mapa-diagnostico">
+        {'~' + Math.max(0.1, Math.round(region.longitudeDelta * 111 * 10) / 10) + ' km · ' + grupos.length + ' marcadores'}
+      </Text>
     </View>
   );
 }
@@ -157,5 +190,7 @@ const s = StyleSheet.create({
   puntoElegido: { width: 26, height: 26, borderRadius: 13, borderWidth: 4, borderColor: color.grafito },
   grupo: { alignItems: 'center', justifyContent: 'center', borderWidth: 3, borderColor: color.fondo },
   grupoElegido: { borderWidth: 4, borderColor: color.grafito },
-  numero: { color: color.marcaTexto, fontWeight: '800', fontSize: 13 }
+  numero: { color: color.marcaTexto, fontWeight: '800', fontSize: 13 },
+  diagnostico: { position: 'absolute', left: 8, top: 8, fontSize: 11, color: color.suave, backgroundColor: color.fondo,
+    paddingHorizontal: 6, paddingVertical: 2, borderRadius: 6, overflow: 'hidden', opacity: 0.85 }
 });

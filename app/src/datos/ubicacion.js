@@ -24,3 +24,14 @@ export async function obtenerPosicion() {
     hora: Date.now()
   };
 }
+
+// Solo el permiso, para mostrar el punto azul en el mapa (lo dibuja el mapa nativo:
+// la app no lee ni guarda la posición por esto).
+export async function pedirPermisoUbicacion() {
+  try {
+    const p = await Location.requestForegroundPermissionsAsync();
+    return p.status === 'granted';
+  } catch (e) {
+    return false;
+  }
+}
