@@ -290,3 +290,58 @@ test('CSV: el descarte viaja de ida y vuelta', () => {
   const f = otra.ferreterias.find(x => x.id === 'f2');
   assert.deepEqual([f.descartada, f.descartadaPor, f.descartadaFecha], ['cerro', 'Ana', '2026-10-10']);
 });
+
+test('estadísticas: periodo, efectividad, cobertura, por vendedor y por municipio', async () => {
+  const E = await import('../src/nucleo/estadisticas.js');
+  const d = base();   // f1 Bucaramanga (zona Z1), f2 y f3 Girón (zona Z2)
+  R.guardarFerreteria(d, { id: 'f4', nombre: 'Delta', municipio: 'Piedecuesta' }, false);
+  R.guardarFerreteria(d, { id: 'f5', nombre: 'Épsilon', municipio: 'Piedecuesta' }, false);
+  R.descartarFerreteria(d, 'f5', 'cerro', 'Ana', false, HOY);
+  const v = (id, ferreteriaId, fecha, resultado, vendedor, extra = {}) =>
+    d.visitas.push(Object.assign({ id, ferreteriaId, fecha, resultado, vendedor, lineas: [], competencia: '', notas: '', creada: fecha + 'T12:00:00Z' }, extra));
+  v('v1', 'f1', '2026-10-10', 'compro', 'Ana', { lineas: ['estufa', 'campana'], competencia: 'Haceb' });
+  v('v2', 'f2', '2026-10-09', 'no_compro', 'Luis', { lineas: ['estufa'], competencia: 'haceb ' });
+  v('v3', 'f2', '2026-10-05', 'pidio_visita', 'ana', { competencia: 'Challenger' });
+  v('v4', 'f3', '2026-08-01', 'compro', 'Luis');   // fuera de 30 días
+  v('v5', 'f4', '2026-10-10', 'no_estaba', 'Luis');
+
+  const s = E.estadisticas(d, { dias: 30 }, HOY);
+  assert.equal(s.desde, '2026-09-11');
+  assert.deepEqual([s.visitas, s.compras, s.efectividad], [4, 1, 25]);
+  assert.deepEqual([s.activas, s.descartadas, s.ferreteriasVisitadas, s.cobertura], [4, 1, 3, 75]);
+  assert.equal(s.resultados.find(r => r.clave === 'pidio_visita').visitas, 1);
+  // Una descartada que se visitó antes no infla la cobertura.
+  v('v6', 'f5', '2026-10-01', 'no_compro', 'Ana');
+  const c = E.estadisticas(d, { dias: 30 }, HOY);
+  assert.deepEqual([c.ferreteriasVisitadas, c.visitadasActivas, c.activas, c.cobertura], [4, 3, 4, 75]);
+  d.visitas.pop();
+  // Ana y ana son la misma persona; Luis tiene 2 visitas en el periodo.
+  assert.deepEqual(s.porVendedor.map(x => [x.clave, x.visitas, x.compras, x.ferreterias]), [['Ana', 2, 1, 2], ['Luis', 2, 0, 2]]);
+  const giron = s.porGrupo.find(g => g.clave === 'Z2');
+  assert.deepEqual([giron.activas, giron.visitadas, giron.cobertura], [2, 1, 50]);
+  assert.ok(!s.porGrupo.some(g => g.activas === 0));   // la descartada no suma
+  assert.deepEqual(s.lineas.slice(0, 2).map(l => [l.clave, l.visitas]), [['estufa', 2], ['campana', 1]]);
+  assert.deepEqual(s.competencia.map(c => [c.clave, c.visitas]), [['Haceb', 2], ['Challenger', 1]]);
+  assert.equal(s.porDia.length, 30);
+  assert.deepEqual(s.porDia[29], { fecha: '2026-10-10', visitas: 2, compras: 1 });
+  // f1 compró por primera vez hoy; f3 compró en agosto (fuera del periodo).
+  assert.deepEqual(s.clientesNuevos.map(c => c.id), ['f1']);
+
+  const hoy = E.estadisticas(d, { dias: 1 }, HOY);
+  assert.deepEqual([hoy.visitas, hoy.porDia.length], [2, 0]);
+  const luis = E.estadisticas(d, { dias: 0, vendedor: 'luis' }, HOY);
+  assert.deepEqual([luis.visitas, luis.compras, luis.clientesNuevos.map(c => c.id)], [3, 1, ['f3']]);
+  assert.deepEqual(E.vendedoresDe(d), ['Ana', 'Luis']);
+});
+
+test('ruta: lo visitado hoy no es pendiente, ni aunque haya pedido visita (vuelve mañana)', () => {
+  const d = base();
+  R.registrarVisita(d, { ferreteriaId: 'f3', resultado: 'pidio_visita', fecha: '2026-10-10' }, false, HOY);
+  R.registrarVisita(d, { ferreteriaId: 'f2', resultado: 'no_estaba', fecha: '2026-10-10' }, false, HOY);
+  const hoy = R.pendientesDe(R.censoDe(d, HOY)).map(f => f.id);
+  assert.deepEqual(hoy, ['f1']);
+  const yo = { lat: 7.068, lng: -73.169 };   // parado en f2
+  assert.deepEqual(G.paradasCercanas(R.pendientesDe(R.censoDe(d, HOY)), yo).map(f => f.id), ['f1']);
+  const manana = new Date(2026, 9, 11, 9, 0, 0);
+  assert.deepEqual(R.pendientesDe(R.censoDe(d, manana)).map(f => f.id).sort(), ['f1', 'f3']);
+});

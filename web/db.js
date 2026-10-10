@@ -275,8 +275,10 @@
 
   // Pendientes de hoy: pidió visita después, o sin visita hace más de 30 días (incluye nunca visitadas).
   function pendientesHoy() {
-    // Las descartadas nunca son pendientes.
-    return censo().filter(f => f.estado !== 'descartada' && (f.estado === 'seguimiento' || f.diasSinVisita > DIAS_SIN_VISITA));
+    // Las descartadas nunca son pendientes. Visitada hoy tampoco, ni aunque haya pedido
+    // visita: si no, sería la primera parada de la ruta estando parado ahí. Vuelve mañana.
+    return censo().filter(f => f.estado !== 'descartada' && f.diasSinVisita > 0 &&
+      (f.estado === 'seguimiento' || f.diasSinVisita > DIAS_SIN_VISITA));
   }
 
   function resumenPor(visitas, claveDe) {
