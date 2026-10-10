@@ -337,3 +337,16 @@ test('demasiados intentos fallidos bloquean el ingreso un rato', { skip: omitir 
   const r = await entrar('luis', 'clave-de-luis-1');
   assert.equal(r.status, 429);
 });
+
+test('carga inicial del censo: inserta las nuevas, no pisa las existentes y repetirla no duplica', { skip: omitir }, async () => {
+  const { cargarCenso } = await import('../src/cargar-censo.js');
+  await sync({ ferreterias: [ferre('c1x', { telefono: 'corregido en la calle' })] });
+  const lista = [ferre('c1x', { telefono: 'de Google' }), ferre('c2x', { tipo: 'materiales', calificacion: 4.5, resenas: 10 }),
+    ferre('c2x'), { id: 'c3x', nombre: '' }];
+  const r = await cargarCenso(pool, lista);
+  assert.deepEqual([r.recibidas, r.yaExistian, r.insertadas, r.rechazadas.length], [4, 2, 1, 1]);
+  const { rows } = await pool.query("select id, telefono, tipo, calificacion from ferreterias where id in ('c1x', 'c2x') order by id");
+  assert.deepEqual(rows.map(x => [x.id, x.telefono, x.tipo, x.calificacion]), [['c1x', 'corregido en la calle', 'ferreteria', null], ['c2x', '', 'materiales', 4.5]]);
+  const otra = await cargarCenso(pool, lista);
+  assert.equal(otra.insertadas, 0);
+});
