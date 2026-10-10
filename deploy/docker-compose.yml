@@ -1,4 +1,4 @@
-# Ruta-viva: Postgres + API (que también sirve la app web) + túnel HTTPS opcional.
+# Ruta-viva: Postgres + API (que también sirve la app web) + HTTPS (Caddy o túnel), opcional.
 #
 # Infraestructura propia: todo lleva el prefijo `rutaviva`, red y volumen
 # propios, y límites duros de memoria y CPU para poder convivir en una máquina
@@ -6,7 +6,8 @@
 #
 #   cd deploy
 #   docker compose up -d --build                     # base + migraciones + API
-#   docker compose --profile tunel up -d             # además, el túnel de ngrok
+#   docker compose --profile https up -d             # en un servidor con IP pública: HTTPS con Caddy
+#   docker compose --profile tunel up -d             # sin IP pública: el túnel de ngrok
 #
 # En local, para abrir la app en http://127.0.0.1:8080, sumar el override:
 #   docker compose -f docker-compose.yml -f docker-compose.local.yml up -d --build
@@ -148,9 +149,40 @@ services:
       - rutaviva_net
     logging: *logs
 
+  # HTTPS en un servidor con IP pública: Caddy saca el certificado de Let's Encrypt
+  # para DOMINIO y le pasa todo al API por la red interna. Es el único servicio que
+  # publica puertos (80 para el certificado y la redirección, 443 para la app).
+  caddy:
+    image: caddy:2.8.4-alpine
+    container_name: rutaviva-caddy
+    profiles: ["https"]
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    environment:
+      DOMINIO: ${DOMINIO:-}   # sin :? a propósito, como el túnel: el resto funciona sin él
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data        # certificados: si se pierden, se piden de nuevo (hay límite semanal)
+      - caddy_config:/config
+    depends_on:
+      api:
+        condition: service_healthy
+    mem_limit: 96m
+    cpus: 0.25
+    networks:
+      - rutaviva_net
+    logging: *logs
+
 volumes:
   pgdata:
     name: ${PG_VOLUME:-rutaviva_pgdata}
+  caddy_data:
+    name: rutaviva_caddy_data
+  caddy_config:
+    name: rutaviva_caddy_config
 
 networks:
   rutaviva_net:

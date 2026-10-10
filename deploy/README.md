@@ -11,6 +11,23 @@ Todo corre en Docker con el prefijo `rutaviva`, red y volumen propios, y límite
 
 En total usa hasta unos 580 MB con el túnel incluido.
 
+## En un servidor con IP pública (Google Cloud, VPS)
+
+Producción corre en una VM de Google Compute Engine (`ruta-viva`, proyecto `ruta-viva-511204`, zona `us-east1-b`, IP fija `136.108.178.241`) con los puertos 80 y 443 abiertos (regla de firewall `ruta-viva-web`). HTTPS con Caddy y Let's Encrypt; sin dominio propio, sslip.io: `https://136-108-178-241.sslip.io`.
+
+```bash
+# Desde Cloud Shell
+gcloud compute ssh ruta-viva --zone=us-east1-b
+# En la VM
+sudo apt-get update && sudo apt-get install -y git
+sudo git clone https://github.com/Jerdirlson/Ruta-viva.git /srv/rutaviva
+sudo bash /srv/rutaviva/deploy/instalar-servidor.sh 136-108-178-241.sslip.io
+```
+
+`instalar-servidor.sh` instala Docker, genera `.env` (si no existe), levanta todo con `--profile https` y programa el respaldo diario. Se puede volver a correr.
+
+Actualizar: `cd /srv/rutaviva && sudo git pull && cd deploy && sudo docker compose --profile https up -d --build`.
+
 ## Primera vez
 
 ```bash

@@ -1,0 +1,12 @@
+# HTTPS para Ruta-viva en un servidor con IP pública (perfil `https` del compose).
+# Caddy saca y renueva solo el certificado de Let's Encrypt para DOMINIO
+# (por ejemplo 136-108-178-241.sslip.io, o un subdominio propio) y comprime
+# las respuestas: la sincronización baja el censo completo y así pesa varias veces menos.
+{$DOMINIO} {
+	encode zstd gzip
+	header {
+		Strict-Transport-Security "max-age=31536000"
+		-Server
+	}
+	reverse_proxy api:3000
+}
