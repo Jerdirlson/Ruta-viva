@@ -35,3 +35,16 @@ export async function pedirPermisoUbicacion() {
     return false;
   }
 }
+
+// Última posición conocida del celular, sin pedir GPS ni permiso (para el punto azul del
+// mapa). null si no hay permiso o no se conoce. Solo se usa en memoria.
+export async function posicionSinPedir() {
+  try {
+    const permiso = await Location.getForegroundPermissionsAsync();
+    if (permiso.status !== 'granted') return null;
+    const p = await Location.getLastKnownPositionAsync({ maxAge: 10 * 60 * 1000 });
+    return p ? { lat: p.coords.latitude, lng: p.coords.longitude } : null;
+  } catch (e) {
+    return null;
+  }
+}
