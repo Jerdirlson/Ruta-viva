@@ -8,6 +8,7 @@ import { useApp } from '../estado/AppContext';
 import { AvisoLinea, Boton, Opcion, abrir } from '../componentes/ui';
 import TarjetaFerreteria from '../componentes/TarjetaFerreteria';
 import MapaHoy from '../componentes/MapaHoy';
+import { usePersistente } from '../datos/preferencias';
 
 // Botón compacto de filtro (zona o estado). Con punto de color si es un estado.
 function Chip({ titulo, activo, onPress, punto, testID }) {
@@ -22,14 +23,15 @@ function Chip({ titulo, activo, onPress, punto, testID }) {
 
 export default function HoyScreen({ navigation, route }) {
   const { censo, posicion, ubicarme, datos, modo, sync, avisar } = useApp();
-  const [zona, setZona] = useState('');
-  const [vista, setVista] = useState('lista');
+  // Zona, Lista/Mapa y filtro de estado se recuerdan al cerrar la app.
+  const [zona, setZona] = usePersistente('hoy.zona', '');
+  const [vista, setVista] = usePersistente('hoy.vista', 'lista');
   const [seleccionada, setSeleccionada] = useState(null);
   // Varias ferreterías en el mismo sitio (mismo edificio): se elige de una lista.
   const [varias, setVarias] = useState(null);
   const elegir = f => { setVarias(null); setSeleccionada(f); };
   // Filtro del mapa por estado (los mismos colores de la leyenda): '' = todos.
-  const [soloColor, setSoloColor] = useState('');
+  const [soloColor, setSoloColor] = usePersistente('hoy.estado', '');
   // "Ver en el mapa": pasa a Mapa sin filtros, con la ferretería elegida y el mapa centrado en ella.
   const [enfoque, setEnfoque] = useState(null);
   const verEnMapa = route && route.params && route.params.verEnMapa;
@@ -38,8 +40,8 @@ export default function HoyScreen({ navigation, route }) {
     if (!verEnMapa) return;
     const f = censo.find(x => x.id === verEnMapa);
     if (!f || f.lat == null) return;
-    setZona('');
-    setSoloColor('');
+    if (zona && grupoDe(f) !== zona) setZona('');
+    if (soloColor && colorPin(f) !== soloColor) setSoloColor('');
     setVarias(null);
     setSeleccionada(f);
     setVista('mapa');

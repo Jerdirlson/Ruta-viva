@@ -6,6 +6,7 @@ import { ESTADOS, normaliza, ordenZona, unicos } from '../nucleo/reglas';
 import { useApp } from '../estado/AppContext';
 import { Boton } from '../componentes/ui';
 import TarjetaFerreteria from '../componentes/TarjetaFerreteria';
+import { usePersistente } from '../datos/preferencias';
 
 // Botón que abre una lista para elegir un valor (o "Todos").
 function Selector({ etiqueta, valor, opciones, onCambiar, testID }) {
@@ -39,22 +40,26 @@ function Selector({ etiqueta, valor, opciones, onCambiar, testID }) {
 export default function CensoScreen({ navigation }) {
   const { censo } = useApp();
   const [q, setQ] = useState('');
-  const [zona, setZona] = useState('');
-  const [municipio, setMunicipio] = useState('');
-  const [estado, setEstado] = useState('');
+  // Los filtros se recuerdan al cerrar la app (la búsqueda por texto no).
+  const [zona, setZona] = usePersistente('censo.zona', '');
+  const [municipio, setMunicipio] = usePersistente('censo.municipio', '');
+  const [estado, setEstado] = usePersistente('censo.estado', '');
 
   const zonas = useMemo(() => unicos(censo.map(f => f.zona)).map(z => [z, z]), [censo]);
   const municipios = useMemo(() => unicos(censo.map(f => f.municipio)).map(m => [m, m]), [censo]);
   const estados = Object.keys(ESTADOS).map(k => [k, ESTADOS[k]]);
 
+  // Un filtro recordado que ya no existe (por ejemplo, una zona que se quitó) se ignora.
+  const zonaVale = zonas.some(([z]) => z === zona) ? zona : '';
+  const municipioVale = municipios.some(([m]) => m === municipio) ? municipio : '';
   const busqueda = normaliza(q);
   // Solo se recalcula si cambian los datos o los filtros (no en cada redibujo).
   const filtradas = useMemo(() => censo.filter(f =>
-    (!zona || f.zona === zona) &&
-    (!municipio || f.municipio === municipio) &&
+    (!zonaVale || f.zona === zonaVale) &&
+    (!municipioVale || f.municipio === municipioVale) &&
     (estado ? f.estado === estado : f.estado !== 'descartada') &&
     (!busqueda || normaliza(f.nombre + ' ' + f.barrio).includes(busqueda))
-  ).sort(ordenZona), [censo, zona, municipio, estado, busqueda]);
+  ).sort(ordenZona), [censo, zonaVale, municipioVale, estado, busqueda]);
 
   return (
     <FlatList
@@ -81,8 +86,8 @@ export default function CensoScreen({ navigation }) {
             testID="buscar"
           />
           <View style={s.filtros}>
-            <Selector etiqueta="Zona" valor={zona} opciones={zonas} onCambiar={setZona} testID="filtro-zona" />
-            <Selector etiqueta="Municipio" valor={municipio} opciones={municipios} onCambiar={setMunicipio} testID="filtro-municipio" />
+            <Selector etiqueta="Zona" valor={zonaVale} opciones={zonas} onCambiar={setZona} testID="filtro-zona" />
+            <Selector etiqueta="Municipio" valor={municipioVale} opciones={municipios} onCambiar={setMunicipio} testID="filtro-municipio" />
             <Selector etiqueta="Estado" valor={estado} opciones={estados} onCambiar={setEstado} testID="filtro-estado" />
           </View>
           <Text style={s.cuenta} testID="conteo">{filtradas.length + ' ferretería(s)'}</Text>
